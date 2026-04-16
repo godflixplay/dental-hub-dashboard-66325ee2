@@ -1,53 +1,110 @@
 
 
-# Dental Hub — Plano de Implementação
+## Análise do estado atual
 
-## Visão Geral
-SaaS modular para automações de WhatsApp voltado a clínicas odontológicas. Nesta fase: autenticação, dashboard com cards de serviços, e navegação entre módulos.
+Já existe parte da infraestrutura implementada:
+- ✅ Tabela `contatos` (com `user_id`, `nome`, `telefone`, `data_nascimento`)
+- ✅ Tabela `whatsapp_instances` (com `user_id`, `instance_name`, `status`)
+- ✅ Server functions Evolution API (`createInstance`, `getQrCode`, `getInstanceStatus`, `sendTextMessage`)
+- ✅ Aba **Contatos** com upload CSV/XLSX
+- ✅ Aba **WhatsApp** com criação de instância e QR Code
+- ✅ Aba **Envio** (teste manual)
+- ✅ RLS isolando dados por `user_id`
 
-## 1. Autenticação (Supabase Auth)
-- Páginas de **login**, **cadastro** e **recuperação de senha**
-- Página `/reset-password` para definir nova senha
-- Guard de rota (`_authenticated`) protegendo todo o `/dashboard`
-- Redirecionamento automático: não logado → login, logado → dashboard
+O que falta para atender o pedido:
+1. Tabela `config_mensagem` (mensagem + imagem por usuário)
+2. Tabela `envios` (log de envios)
+3. Bucket de Storage para as imagens
+4. Nova aba **Mensagem** com editor de texto + upload de imagem + preview
+5. Atualizar aba **Envio** para usar a mensagem/imagem salva em `config_mensagem` e gravar log em `envios`
 
-## 2. Banco de Dados (Supabase)
-- **profiles** — id (FK auth.users), email, created_at
-- **servicos** — id, nome, descricao, icone, status (`ativo` | `em_breve`), slug
-- **usuario_servicos** — usuario_id (FK profiles), servico_id (FK servicos)
-- RLS: usuários leem apenas seus próprios dados
-- Seed inicial com 4 serviços: Aniversários (ativo), Campanhas, Lembretes, Recuperação (em breve)
+Observação importante: a estrutura atual usa nomes em inglês (`user_id`, `data_nascimento`, `whatsapp_instances`). Vou **manter esses nomes** para não quebrar o que já funciona — apenas adicionando as duas novas tabelas (`config_mensagem` e `envios`) seguindo o mesmo padrão (`user_id`).
 
-## 3. Dashboard Principal (`/dashboard`)
-- Layout com sidebar (logo, menu, logout)
-- Grid de cards mostrando todos os serviços
-- Cards ativos: clicáveis, com ícone colorido e botão "Acessar"
-- Cards "em breve": visual esmaecido com badge "Em Breve", não clicáveis
-- Boas-vindas com nome/email do usuário
+## Plano de implementação
 
-## 4. Páginas de Serviços
-- `/dashboard/aniversarios` — página funcional (estrutura base com título, descrição e espaço para futuro conteúdo)
-- `/dashboard/campanhas` — placeholder "Em Breve"
-- `/dashboard/lembretes` — placeholder "Em Breve"  
-- `/dashboard/recuperacao` — placeholder "Em Breve"
-- Cada página com botão de voltar ao dashboard
+### Etapa 1 — Banco de dados (migration)
 
-## 5. Design
-- Interface limpa, SaaS moderno, tons de azul/branco
-- Responsivo (mobile-first)
-- Componentes shadcn/ui (cards, buttons, badges, sidebar)
-- Ícones Lucide (Cake, Megaphone, Bell, UserCheck)
+Criar via migration:
 
-## 6. Rotas
+**Tabela `config_mensagem`**
+- `id uuid pk`
+- `user_id uuid` (unique — uma config por usuário)
+- `mensagem text` (suporta `{nome}`)
+- `imagem_url text` (URL pública do Storage)
+- `updated_at timestamptz`
+- RLS: usuário só vê/edita a própria; admin vê todas
+
+**Tabela `envios`**
+- `id uuid pk`
+- `user_id uuid`
+- `contato_id uuid` (opcional, FK para `contatos`)
+- `telefone text`
+- `nome text`
+- `status text` (`enviado` | `erro` | `pendente`)
+- `erro text` (mensagem de erro quando aplicável)
+- `data_envio timestamptz default now()`
+- RLS: usuário só vê os próprios envios; admin vê todos
+
+**Storage bucket `mensagens`** (público para leitura) com policies para upload/update/delete restritos ao próprio usuário (path `{user_id}/...`).
+
+### Etapa 2 — Aba "Mensagem" (nova)
+
+Criar `src/components/aniversarios/MensagemTab.tsx`:
+- Textarea para mensagem com hint da variável `{nome}`
+- Upload de imagem (input file → Supabase Storage bucket `mensagens` em `{user_id}/banner.{ext}`)
+- Preview lado a lado: card simulando WhatsApp mostrando imagem + texto com `{nome}` substituído por "João" como exemplo
+- Botão **Salvar** → upsert em `config_mensagem`
+- Carrega config existente ao abrir
+
+Adicionar a aba em `src/routes/_authenticated.dashboard.aniversarios.tsx` (ícone `MessageSquare`).
+
+### Etapa 3 — Importação de contatos
+
+Já implementado e funcional. **Sem mudanças** — apenas confirmar que aceita as colunas `Nome`, `Telefone`, `Data Nascimento` (já aceita variantes).
+
+### Etapa 4 — Conexão WhatsApp
+
+Já implementado. **Sem mudanças**.
+
+### Etapa 5 — Atualizar aba "Envio"
+
+Refatorar `EnvioTab.tsx`:
+- Remover textarea manual de mensagem
+- Carregar mensagem/imagem da `config_mensagem` do usuário
+- Mostrar aviso se config não existir ("Configure sua mensagem na aba Mensagem")
+- Ao enviar: substituir `{nome}`, chamar `sendTextMessage`, e gravar registro em `envios` (status `enviado` ou `erro`)
+- (Opcional nesta etapa) Mostrar últimos envios em uma tabela abaixo
+
+### Etapa 6 — Painel admin
+
+A tabela `envios` aparecerá automaticamente para o admin via RLS quando expandirmos os relatórios. Nesta etapa apenas garantir as policies — UI admin de envios fica para depois.
+
+## Estrutura final de arquivos
+
+```text
+src/
+├── routes/_authenticated.dashboard.aniversarios.tsx   (+ aba Mensagem)
+├── components/aniversarios/
+│   ├── ContatosTab.tsx       (sem mudança)
+│   ├── WhatsAppTab.tsx       (sem mudança)
+│   ├── MensagemTab.tsx       (NOVO)
+│   └── EnvioTab.tsx          (refatorado para usar config_mensagem + log envios)
+└── integrations/supabase/    (tipos regenerados após migration)
 ```
-/login
-/signup
-/forgot-password
-/reset-password
-/dashboard              (cards de serviços)
-/dashboard/aniversarios
-/dashboard/campanhas
-/dashboard/lembretes
-/dashboard/recuperacao
-```
+
+## Fluxo de teste após implementação
+
+1. Cadastrar/logar como cliente
+2. Aba **WhatsApp** → criar instância → escanear QR
+3. Aba **Mensagem** → escrever texto com `{nome}` + upload de imagem → salvar
+4. Aba **Contatos** → importar planilha
+5. Aba **Envio** → escolher contato → enviar (usa mensagem/imagem salva) → conferir registro em `envios`
+
+## Pontos técnicos
+
+- Migration adiciona `config_mensagem`, `envios` e bucket `mensagens` com RLS completa
+- Storage path padronizado em `{user_id}/...` para policies funcionarem
+- `EnvioTab` passa a inserir em `envios` após cada tentativa (sucesso ou erro)
+- Envio com imagem usaria endpoint `sendMedia` da Evolution — nesta etapa, mantemos `sendText` e a imagem fica apenas no preview/config (envio com mídia entra na próxima iteração junto com a automação n8n, conforme você indicou)
+- Isolamento total garantido via `user_id` + RLS em todas as tabelas
 
