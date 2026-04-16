@@ -1,11 +1,11 @@
-import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { createFileRoute, Outlet, Navigate } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
 
-export const Route = createFileRoute("/")({
-  component: Index,
+export const Route = createFileRoute("/_authenticated")({
+  component: AuthenticatedLayout,
 });
 
-function Index() {
+function AuthenticatedLayout() {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -16,9 +16,9 @@ function Index() {
     );
   }
 
-  if (user) {
-    return <Navigate to="/dashboard" />;
+  if (!user) {
+    return <Navigate to="/login" />;
   }
 
-  return <Navigate to="/login" />;
+  return <Outlet />;
 }
