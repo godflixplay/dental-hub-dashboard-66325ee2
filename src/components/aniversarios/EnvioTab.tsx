@@ -1,11 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { sendTextMessage } from "@/utils/evolution.functions";
-import { Send, MessageSquare } from "lucide-react";
+import { Send, MessageSquare, AlertCircle, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Card,
@@ -22,6 +21,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { toast } from "sonner";
 
 interface Contato {
@@ -30,80 +37,128 @@ interface Contato {
   telefone: string;
 }
 
+interface Envio {
+  id: string;
+  telefone: string;
+  nome: string | null;
+  status: string;
+  erro: string | null;
+  data_envio: string;
+}
+
+interface ConfigMensagem {
+  mensagem: string;
+  imagem_url: string | null;
+}
+
 export function EnvioTab() {
   const { user } = useAuth();
   const [contatos, setContatos] = useState<Contato[]>([]);
+  const [config, setConfig] = useState<ConfigMensagem | null>(null);
   const [instanceName, setInstanceName] = useState<string | null>(null);
   const [instanceStatus, setInstanceStatus] = useState<string>("disconnected");
+  const [envios, setEnvios] = useState<Envio[]>([]);
   const [selectedContato, setSelectedContato] = useState("");
   const [customPhone, setCustomPhone] = useState("");
-  const [message, setMessage] = useState(
-    "🎂 Feliz aniversário, {nome}! A equipe da clínica deseja a você um dia incrível! 🎉",
-  );
+  const [customNome, setCustomNome] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchAll = useCallback(async () => {
     if (!user) return;
-    Promise.all([
+    const [contatosRes, instanceRes, configRes, enviosRes] = await Promise.all([
       supabase.from("contatos").select("id, nome, telefone").order("nome"),
       supabase
         .from("whatsapp_instances")
         .select("instance_name, status")
         .eq("user_id", user.id)
         .maybeSingle(),
-    ]).then(([contatosRes, instanceRes]) => {
-      setContatos((contatosRes.data as Contato[]) ?? []);
-      if (instanceRes.data) {
-        setInstanceName(
-          (instanceRes.data as { instance_name: string }).instance_name,
-        );
-        setInstanceStatus(
-          (instanceRes.data as { status: string }).status,
-        );
-      }
-      setLoading(false);
-    });
+      supabase
+        .from("config_mensagem")
+        .select("mensagem, imagem_url")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("envios")
+        .select("id, telefone, nome, status, erro, data_envio")
+        .eq("user_id", user.id)
+        .order("data_envio", { ascending: false })
+        .limit(10),
+    ]);
+
+    setContatos((contatosRes.data as Contato[]) ?? []);
+    if (instanceRes.data) {
+      const i = instanceRes.data as { instance_name: string; status: string };
+      setInstanceName(i.instance_name);
+      setInstanceStatus(i.status);
+    }
+    setConfig((configRes.data as ConfigMensagem) ?? null);
+    setEnvios((enviosRes.data as Envio[]) ?? []);
+    setLoading(false);
   }, [user]);
 
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
+
   const handleSend = async () => {
+    if (!user) return;
     if (!instanceName) {
       toast.error("Conecte o WhatsApp primeiro");
+      return;
+    }
+    if (!config) {
+      toast.error("Configure sua mensagem na aba Mensagem");
       return;
     }
 
     const contato = contatos.find((c) => c.id === selectedContato);
     const phone = contato?.telefone || customPhone.replace(/\D/g, "");
-    const nome = contato?.nome || "paciente";
+    const nome = contato?.nome || customNome || "paciente";
 
     if (!phone) {
       toast.error("Selecione um contato ou digite um número");
       return;
     }
 
-    if (!message.trim()) {
-      toast.error("Digite uma mensagem");
-      return;
-    }
-
     setSending(true);
+    const finalMessage = config.mensagem.replace(/{nome}/g, nome);
+
     try {
-      const finalMessage = message.replace(/{nome}/g, nome);
       const result = await sendTextMessage({
-        data: {
-          instanceName,
-          phone,
-          message: finalMessage,
-        },
+        data: { instanceName, phone, message: finalMessage },
+      });
+
+      const status = result.success ? "enviado" : "erro";
+      const erro = result.success ? null : (result.error ?? "Erro desconhecido");
+
+      await supabase.from("envios").insert({
+        user_id: user.id,
+        contato_id: contato?.id ?? null,
+        telefone: phone,
+        nome,
+        status,
+        erro,
       });
 
       if (result.success) {
-        toast.success(`Mensagem enviada para ${phone}!`);
+        toast.success(`Mensagem enviada para ${nome}!`);
       } else {
-        toast.error(result.error ?? "Erro ao enviar mensagem");
+        toast.error(erro ?? "Erro ao enviar");
       }
-    } catch {
-      toast.error("Erro ao enviar mensagem");
+      fetchAll();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao enviar";
+      await supabase.from("envios").insert({
+        user_id: user.id,
+        contato_id: contato?.id ?? null,
+        telefone: phone,
+        nome,
+        status: "erro",
+        erro: msg,
+      });
+      toast.error(msg);
+      fetchAll();
     } finally {
       setSending(false);
     }
@@ -117,22 +172,28 @@ export function EnvioTab() {
     );
   }
 
+  const canSend = instanceStatus === "connected" && config !== null;
+
   return (
     <div className="space-y-4">
-      {/* Status */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg">Envio de Teste</CardTitle>
-            <Badge
-              variant={
-                instanceStatus === "connected" ? "default" : "destructive"
-              }
-            >
-              {instanceStatus === "connected"
-                ? "WhatsApp Conectado"
-                : "WhatsApp Desconectado"}
-            </Badge>
+            <div className="flex gap-2">
+              <Badge
+                variant={
+                  instanceStatus === "connected" ? "default" : "destructive"
+                }
+              >
+                {instanceStatus === "connected"
+                  ? "WhatsApp Conectado"
+                  : "WhatsApp Desconectado"}
+              </Badge>
+              <Badge variant={config ? "default" : "destructive"}>
+                {config ? "Mensagem Configurada" : "Mensagem Não Configurada"}
+              </Badge>
+            </div>
           </div>
           <CardDescription>
             Envie uma mensagem de teste para verificar se tudo está funcionando
@@ -140,11 +201,23 @@ export function EnvioTab() {
         </CardHeader>
       </Card>
 
+      {!config && (
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardContent className="flex items-center gap-3 py-4">
+            <AlertCircle className="h-5 w-5 text-destructive" />
+            <div className="text-sm">
+              Você ainda não configurou sua mensagem de aniversário. Vá até a
+              aba <strong>Mensagem</strong> para definir o texto e a imagem.
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-base">
             <MessageSquare className="h-4 w-4" />
-            Compor Mensagem
+            Enviar Mensagem
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -155,6 +228,7 @@ export function EnvioTab() {
               onValueChange={(v) => {
                 setSelectedContato(v);
                 setCustomPhone("");
+                setCustomNome("");
               }}
             >
               <SelectTrigger>
@@ -170,37 +244,107 @@ export function EnvioTab() {
             </Select>
           </div>
 
-          <div>
-            <Label>Ou digite um número</Label>
-            <Input
-              placeholder="5511999999999"
-              value={customPhone}
-              onChange={(e) => {
-                setCustomPhone(e.target.value);
-                setSelectedContato("");
-              }}
-            />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label>Ou digite um número</Label>
+              <Input
+                placeholder="5511999999999"
+                value={customPhone}
+                onChange={(e) => {
+                  setCustomPhone(e.target.value);
+                  setSelectedContato("");
+                }}
+              />
+            </div>
+            <div>
+              <Label>Nome (para {"{nome}"})</Label>
+              <Input
+                placeholder="João"
+                value={customNome}
+                onChange={(e) => setCustomNome(e.target.value)}
+                disabled={!!selectedContato}
+              />
+            </div>
           </div>
 
-          <div>
-            <Label>Mensagem</Label>
-            <Textarea
-              rows={4}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Use <code>{"{nome}"}</code> para inserir o nome do contato
-            </p>
-          </div>
+          {config && (
+            <div className="rounded-md border bg-muted/30 p-3">
+              <p className="mb-1 text-xs font-medium text-muted-foreground">
+                Preview da mensagem:
+              </p>
+              <p className="whitespace-pre-wrap text-sm">
+                {config.mensagem.replace(
+                  /{nome}/g,
+                  contatos.find((c) => c.id === selectedContato)?.nome ||
+                    customNome ||
+                    "João",
+                )}
+              </p>
+            </div>
+          )}
 
-          <Button
-            onClick={handleSend}
-            disabled={sending || instanceStatus !== "connected"}
-          >
+          <Button onClick={handleSend} disabled={sending || !canSend}>
             <Send className="mr-2 h-4 w-4" />
             {sending ? "Enviando..." : "Enviar Teste"}
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Histórico */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <History className="h-4 w-4" />
+            Últimos Envios
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {envios.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              Nenhum envio realizado ainda
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Telefone</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {envios.map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell className="text-xs">
+                      {new Date(e.data_envio).toLocaleString("pt-BR")}
+                    </TableCell>
+                    <TableCell>{e.nome ?? "-"}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {e.telefone}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          e.status === "enviado" ? "default" : "destructive"
+                        }
+                      >
+                        {e.status}
+                      </Badge>
+                      {e.erro && (
+                        <span
+                          className="ml-2 text-xs text-muted-foreground"
+                          title={e.erro}
+                        >
+                          ⓘ
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>
