@@ -1,7 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Cake } from "lucide-react";
+import { ArrowLeft, Users, Smartphone, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ContatosTab } from "@/components/aniversarios/ContatosTab";
+import { WhatsAppTab } from "@/components/aniversarios/WhatsAppTab";
+import { EnvioTab } from "@/components/aniversarios/EnvioTab";
 
 export const Route = createFileRoute("/_authenticated/dashboard/aniversarios")({
   component: AniversariosPage,
@@ -24,25 +27,34 @@ function AniversariosPage() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Cake className="h-5 w-5" />
-          </div>
-          <CardTitle>Configurar mensagens de aniversário</CardTitle>
-          <CardDescription>
-            Aqui você poderá cadastrar pacientes, definir mensagens personalizadas e
-            configurar o envio automático via WhatsApp no dia do aniversário.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-lg border-2 border-dashed border-border p-8 text-center">
-            <p className="text-muted-foreground">
-              Módulo em desenvolvimento. Em breve você poderá configurar tudo por aqui.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="contatos" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="contatos">
+            <Users className="mr-2 h-4 w-4" />
+            Contatos
+          </TabsTrigger>
+          <TabsTrigger value="whatsapp">
+            <Smartphone className="mr-2 h-4 w-4" />
+            WhatsApp
+          </TabsTrigger>
+          <TabsTrigger value="envio">
+            <Send className="mr-2 h-4 w-4" />
+            Envio
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="contatos">
+          <ContatosTab />
+        </TabsContent>
+
+        <TabsContent value="whatsapp">
+          <WhatsAppTab />
+        </TabsContent>
+
+        <TabsContent value="envio">
+          <EnvioTab />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
