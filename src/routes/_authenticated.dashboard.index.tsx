@@ -44,7 +44,7 @@ function DashboardIndex() {
   const { user, role } = useAuth();
 
   if (role === "admin") {
-    return <Navigate to="/dashboard/admin" />;
+    return <Navigate to="/admin" />;
   }
 
   return (
