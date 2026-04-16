@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Users, Smartphone, Send } from "lucide-react";
+import { ArrowLeft, Users, Smartphone, Send, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ContatosTab } from "@/components/aniversarios/ContatosTab";
 import { WhatsAppTab } from "@/components/aniversarios/WhatsAppTab";
+import { MensagemTab } from "@/components/aniversarios/MensagemTab";
 import { EnvioTab } from "@/components/aniversarios/EnvioTab";
 
 export const Route = createFileRoute("/_authenticated/dashboard/aniversarios")({
@@ -27,15 +28,19 @@ function AniversariosPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="contatos" className="space-y-4">
+      <Tabs defaultValue="whatsapp" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="contatos">
-            <Users className="mr-2 h-4 w-4" />
-            Contatos
-          </TabsTrigger>
           <TabsTrigger value="whatsapp">
             <Smartphone className="mr-2 h-4 w-4" />
             WhatsApp
+          </TabsTrigger>
+          <TabsTrigger value="mensagem">
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Mensagem
+          </TabsTrigger>
+          <TabsTrigger value="contatos">
+            <Users className="mr-2 h-4 w-4" />
+            Contatos
           </TabsTrigger>
           <TabsTrigger value="envio">
             <Send className="mr-2 h-4 w-4" />
@@ -43,12 +48,16 @@ function AniversariosPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="contatos">
-          <ContatosTab />
-        </TabsContent>
-
         <TabsContent value="whatsapp">
           <WhatsAppTab />
+        </TabsContent>
+
+        <TabsContent value="mensagem">
+          <MensagemTab />
+        </TabsContent>
+
+        <TabsContent value="contatos">
+          <ContatosTab />
         </TabsContent>
 
         <TabsContent value="envio">
