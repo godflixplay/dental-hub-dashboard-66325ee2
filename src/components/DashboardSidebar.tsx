@@ -25,7 +25,7 @@ const clientMenuItems = [
 ];
 
 const adminMenuItems = [
-  { title: "Painel Admin", url: "/dashboard/admin", icon: Shield },
+  { title: "Painel Admin", url: "/admin", icon: Shield },
 ];
 
 export function DashboardSidebar() {
