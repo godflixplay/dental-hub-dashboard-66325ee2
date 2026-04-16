@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { Cake, Megaphone, Bell, UserCheck } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,7 +41,11 @@ const services = [
 ];
 
 function DashboardIndex() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+
+  if (role === "admin") {
+    return <Navigate to="/dashboard/admin" />;
+  }
 
   return (
     <div className="space-y-8">

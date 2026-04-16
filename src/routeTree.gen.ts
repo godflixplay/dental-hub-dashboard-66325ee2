@@ -21,6 +21,7 @@ import { Route as AuthenticatedDashboardRecuperacaoRouteImport } from './routes/
 import { Route as AuthenticatedDashboardLembretesRouteImport } from './routes/_authenticated.dashboard.lembretes'
 import { Route as AuthenticatedDashboardCampanhasRouteImport } from './routes/_authenticated.dashboard.campanhas'
 import { Route as AuthenticatedDashboardAniversariosRouteImport } from './routes/_authenticated.dashboard.aniversarios'
+import { Route as AuthenticatedDashboardAdminRouteImport } from './routes/_authenticated.dashboard.admin'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -86,6 +87,12 @@ const AuthenticatedDashboardAniversariosRoute =
     path: '/aniversarios',
     getParentRoute: () => AuthenticatedDashboardRoute,
   } as any)
+const AuthenticatedDashboardAdminRoute =
+  AuthenticatedDashboardAdminRouteImport.update({
+    id: '/admin',
+    path: '/admin',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/dashboard': typeof AuthenticatedDashboardRouteWithChildren
+  '/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
   '/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
@@ -106,6 +114,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
+  '/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
   '/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
@@ -121,6 +130,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRouteWithChildren
+  '/_authenticated/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/_authenticated/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
   '/_authenticated/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
   '/_authenticated/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
@@ -136,6 +146,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/dashboard'
+    | '/dashboard/admin'
     | '/dashboard/aniversarios'
     | '/dashboard/campanhas'
     | '/dashboard/lembretes'
@@ -148,6 +159,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/signup'
+    | '/dashboard/admin'
     | '/dashboard/aniversarios'
     | '/dashboard/campanhas'
     | '/dashboard/lembretes'
@@ -162,6 +174,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/_authenticated/dashboard'
+    | '/_authenticated/dashboard/admin'
     | '/_authenticated/dashboard/aniversarios'
     | '/_authenticated/dashboard/campanhas'
     | '/_authenticated/dashboard/lembretes'
@@ -264,10 +277,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardAniversariosRouteImport
       parentRoute: typeof AuthenticatedDashboardRoute
     }
+    '/_authenticated/dashboard/admin': {
+      id: '/_authenticated/dashboard/admin'
+      path: '/admin'
+      fullPath: '/dashboard/admin'
+      preLoaderRoute: typeof AuthenticatedDashboardAdminRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
   }
 }
 
 interface AuthenticatedDashboardRouteChildren {
+  AuthenticatedDashboardAdminRoute: typeof AuthenticatedDashboardAdminRoute
   AuthenticatedDashboardAniversariosRoute: typeof AuthenticatedDashboardAniversariosRoute
   AuthenticatedDashboardCampanhasRoute: typeof AuthenticatedDashboardCampanhasRoute
   AuthenticatedDashboardLembretesRoute: typeof AuthenticatedDashboardLembretesRoute
@@ -277,6 +298,7 @@ interface AuthenticatedDashboardRouteChildren {
 
 const AuthenticatedDashboardRouteChildren: AuthenticatedDashboardRouteChildren =
   {
+    AuthenticatedDashboardAdminRoute: AuthenticatedDashboardAdminRoute,
     AuthenticatedDashboardAniversariosRoute:
       AuthenticatedDashboardAniversariosRoute,
     AuthenticatedDashboardCampanhasRoute: AuthenticatedDashboardCampanhasRoute,
