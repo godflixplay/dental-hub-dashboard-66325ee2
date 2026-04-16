@@ -1,4 +1,4 @@
-import { Cake, Megaphone, Bell, UserCheck, LayoutDashboard, LogOut } from "lucide-react";
+import { Cake, Megaphone, Bell, UserCheck, LayoutDashboard, LogOut, Shield } from "lucide-react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 
-const menuItems = [
+const clientMenuItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Aniversários", url: "/dashboard/aniversarios", icon: Cake },
   { title: "Campanhas", url: "/dashboard/campanhas", icon: Megaphone },
@@ -24,11 +24,17 @@ const menuItems = [
   { title: "Recuperação", url: "/dashboard/recuperacao", icon: UserCheck },
 ];
 
+const adminMenuItems = [
+  { title: "Painel Admin", url: "/dashboard/admin", icon: Shield },
+];
+
 export function DashboardSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
-  const { signOut, user } = useAuth();
+  const { signOut, user, role } = useAuth();
+
+  const menuItems = role === "admin" ? adminMenuItems : clientMenuItems;
 
   const isActive = (url: string) => {
     if (url === "/dashboard") return location.pathname === "/dashboard";
@@ -52,7 +58,7 @@ export function DashboardSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Menu</SidebarGroupLabel>
+          <SidebarGroupLabel>{role === "admin" ? "Administração" : "Menu"}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems.map((item) => (
@@ -75,9 +81,16 @@ export function DashboardSidebar() {
 
       <SidebarFooter className="p-4">
         {!collapsed && user && (
-          <p className="mb-2 truncate text-xs text-sidebar-foreground/70">
-            {user.email}
-          </p>
+          <div className="mb-2">
+            {role === "admin" && (
+              <span className="mb-1 inline-block rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                Admin
+              </span>
+            )}
+            <p className="truncate text-xs text-sidebar-foreground/70">
+              {user.email}
+            </p>
+          </div>
         )}
         <Button
           variant="ghost"
