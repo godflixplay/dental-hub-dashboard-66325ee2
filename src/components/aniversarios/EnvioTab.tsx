@@ -137,6 +137,12 @@ export function EnvioTab() {
       return;
     }
 
+    const mensagemTemplate = config?.mensagem?.trim();
+    if (!mensagemTemplate) {
+      toast.error("Configure sua mensagem na aba Mensagem");
+      return;
+    }
+
     const contato = contatos.find((c) => c.id === selectedContato);
     const phone = contato?.telefone || customPhone.replace(/\D/g, "");
     const nome = contato?.nome || customNome || "paciente";
@@ -147,7 +153,7 @@ export function EnvioTab() {
     }
 
     setSending(true);
-    const finalMessage = config.mensagem.replace(/{nome}/g, nome);
+    const finalMessage = buildMensagemPreview(mensagemTemplate, nome);
 
     try {
       const result = await sendTextMessage({
