@@ -88,7 +88,9 @@ function getEvolutionConfig() {
   if (!url) throw new Error("EVOLUTION_API_URL is not configured");
   const key = process.env.EVOLUTION_API_KEY;
   if (!key) throw new Error("EVOLUTION_API_KEY is not configured");
-  return { url: url.replace(/\/$/, ""), key };
+  // Remove trailing slash and accidental "/manager" suffix
+  const cleaned = url.replace(/\/$/, "").replace(/\/manager$/i, "");
+  return { url: cleaned, key };
 }
 
 export const createInstance = createServerFn({ method: "POST" })
