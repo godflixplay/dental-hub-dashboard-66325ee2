@@ -6,7 +6,7 @@ import {
   getQrCode,
   getInstanceStatus,
 } from "@/utils/evolution.functions";
-import { Smartphone, QrCode, RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { Smartphone, QrCode, RefreshCw, Wifi, WifiOff, CheckCircle2, Loader2, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,6 +25,19 @@ interface Instance {
   status: string;
 }
 
+type StepKey = "create" | "save" | "qr" | "scan" | "connected";
+type StepState = "pending" | "active" | "done" | "error";
+
+const STEP_LABELS: Record<StepKey, string> = {
+  create: "Criando instância na Evolution API",
+  save: "Registrando instância no banco de dados",
+  qr: "Gerando QR Code",
+  scan: "Aguardando leitura do QR Code no celular",
+  connected: "WhatsApp conectado",
+};
+
+const STEP_ORDER: StepKey[] = ["create", "save", "qr", "scan", "connected"];
+
 export function WhatsAppTab() {
   const { user, session } = useAuth();
   const [instance, setInstance] = useState<Instance | null>(null);
@@ -33,6 +46,93 @@ export function WhatsAppTab() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [qrError, setQrError] = useState<string | null>(null);
+  const [steps, setSteps] = useState<Record<StepKey, StepState>>({
+    create: "pending",
+    save: "pending",
+    qr: "pending",
+    scan: "pending",
+    connected: "pending",
+  });
+
+  const updateStep = (key: StepKey, state: StepState) =>
+    setSteps((prev) => ({ ...prev, [key]: state }));
+
+  const resetSteps = () =>
+    setSteps({
+      create: "pending",
+      save: "pending",
+      qr: "pending",
+      scan: "pending",
+      connected: "pending",
+    });
+
+  const StepperCard = () => {
+    const anyActivity = Object.values(steps).some((s) => s !== "pending");
+    if (!anyActivity && !connecting) return null;
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Progresso da conexão</CardTitle>
+          <CardDescription>
+            Acompanhe cada etapa do fluxo abaixo.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {STEP_ORDER.map((key, idx) => {
+            const state = steps[key];
+            const Icon =
+              state === "done"
+                ? CheckCircle2
+                : state === "active"
+                  ? Loader2
+                  : state === "error"
+                    ? Circle
+                    : Circle;
+            const colorClass =
+              state === "done"
+                ? "text-primary"
+                : state === "active"
+                  ? "text-primary"
+                  : state === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground";
+            return (
+              <div key={key} className="flex items-center gap-3 text-sm">
+                <Icon
+                  className={`h-4 w-4 ${colorClass} ${state === "active" ? "animate-spin" : ""}`}
+                />
+                <span className="text-muted-foreground">{idx + 1}.</span>
+                <span
+                  className={
+                    state === "pending"
+                      ? "text-muted-foreground"
+                      : "text-foreground"
+                  }
+                >
+                  {STEP_LABELS[key]}
+                </span>
+                {state === "active" && (
+                  <Badge variant="secondary" className="ml-auto">
+                    Em andamento
+                  </Badge>
+                )}
+                {state === "done" && (
+                  <Badge variant="default" className="ml-auto">
+                    Concluído
+                  </Badge>
+                )}
+                {state === "error" && (
+                  <Badge variant="destructive" className="ml-auto">
+                    Falhou
+                  </Badge>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+    );
+  };
 
   const fetchInstance = useCallback(async () => {
     if (!user) return;
@@ -60,17 +160,23 @@ export function WhatsAppTab() {
 
     setConnecting(true);
     setQrError(null);
+    resetSteps();
     try {
       const instanceName = buildInstanceName();
 
       // 1) Garante que a instância desejada exista na Evolution e no banco
       if (!instance || instance.instance_name !== instanceName) {
+        updateStep("create", "active");
         const result = await createInstance({ data: { instanceName } });
         if (!result.success) {
+          updateStep("create", "error");
           toast.error(result.error ?? "Erro ao criar instância");
+          setQrError(result.error ?? "Erro ao criar instância");
           return;
         }
+        updateStep("create", "done");
 
+        updateStep("save", "active");
         const payload = {
           user_id: user.id,
           instance_name: instanceName,
@@ -86,21 +192,29 @@ export function WhatsAppTab() {
           : await supabase.from("whatsapp_instances").insert(payload);
 
         if (error) {
+          updateStep("save", "error");
           toast.error(error.message);
+          setQrError(error.message);
           return;
         }
+        updateStep("save", "done");
 
         if (result.data?.qrcode?.base64) {
           setQrCode(result.data.qrcode.base64);
         }
         await fetchInstance();
+      } else {
+        updateStep("create", "done");
+        updateStep("save", "done");
       }
 
       // 2) Busca/atualiza o QR Code
+      updateStep("qr", "active");
       const qrResult = await getQrCode({
         data: { instanceName, accessToken: session.access_token },
       });
       if (!qrResult.success) {
+        updateStep("qr", "error");
         setQrCode(null);
         setQrError(qrResult.error ?? "Erro ao obter QR Code");
         toast.error(qrResult.error ?? "Erro ao obter QR Code");
@@ -109,8 +223,13 @@ export function WhatsAppTab() {
       if (qrResult.data?.base64) {
         setQrCode(qrResult.data.base64);
         setQrError(null);
+        updateStep("qr", "done");
+        updateStep("scan", "active");
         toast.success("QR Code gerado! Escaneie com seu WhatsApp.");
       } else if (qrResult.data?.instance?.state === "open") {
+        updateStep("qr", "done");
+        updateStep("scan", "done");
+        updateStep("connected", "done");
         toast.success("WhatsApp já está conectado!");
         await supabase
           .from("whatsapp_instances")
@@ -120,6 +239,7 @@ export function WhatsAppTab() {
         setQrError(null);
         await fetchInstance();
       } else {
+        updateStep("qr", "error");
         setQrCode(null);
         setQrError(
           "QR Code não disponível no momento. Clique novamente para tentar gerar.",
@@ -161,6 +281,8 @@ export function WhatsAppTab() {
         toast.success("WhatsApp conectado!");
         setQrCode(null);
         setQrError(null);
+        updateStep("scan", "done");
+        updateStep("connected", "done");
       } else {
         toast.info("WhatsApp ainda não conectado");
       }
@@ -183,7 +305,8 @@ export function WhatsAppTab() {
   // Estado: ainda não criou instância
   if (!instance) {
     return (
-      <Card>
+      <div className="space-y-4">
+        <Card>
         <CardHeader>
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Smartphone className="h-5 w-5" />
@@ -200,12 +323,15 @@ export function WhatsAppTab() {
             {connecting ? "Conectando..." : "Conectar WhatsApp"}
           </Button>
         </CardContent>
-      </Card>
+        </Card>
+        <StepperCard />
+      </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      <StepperCard />
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">

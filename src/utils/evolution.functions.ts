@@ -88,7 +88,9 @@ function getEvolutionConfig() {
   if (!url) throw new Error("EVOLUTION_API_URL is not configured");
   const key = process.env.EVOLUTION_API_KEY;
   if (!key) throw new Error("EVOLUTION_API_KEY is not configured");
-  return { url: url.replace(/\/$/, ""), key };
+  // Remove trailing slash and accidental "/manager" suffix
+  const cleaned = url.replace(/\/$/, "").replace(/\/manager$/i, "");
+  return { url: cleaned, key };
 }
 
 export const createInstance = createServerFn({ method: "POST" })
@@ -98,6 +100,7 @@ export const createInstance = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { url, key } = getEvolutionConfig();
     try {
+      console.log("[Evolution] createInstance →", { url, instanceName: data.instanceName });
       const res = await fetch(`${url}/instance/create`, {
         method: "POST",
         headers: {
@@ -110,15 +113,20 @@ export const createInstance = createServerFn({ method: "POST" })
           qrcode: true,
         }),
       });
-      const body = await res.json();
+      const rawBody = await res.text();
+      const body = parseJsonSafely(rawBody) ?? rawBody;
+      console.log("[Evolution] createInstance ←", res.status, typeof body === "string" ? body.slice(0, 300) : JSON.stringify(body).slice(0, 300));
       if (!res.ok) {
         return {
           success: false,
-          error: `Evolution API error [${res.status}]: ${JSON.stringify(body)}`,
+          error: `Evolution API erro [${res.status}]: ${typeof body === "string" ? body : JSON.stringify(body)}`,
         };
       }
-      return { success: true, data: body };
+      // Tenta já extrair QR Code da resposta de criação
+      const qr = extractQrCode(body);
+      return { success: true, data: body, qrCode: qr };
     } catch (error) {
+      console.error("[Evolution] createInstance error", error);
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -135,6 +143,7 @@ export const getQrCode = createServerFn({ method: "POST" })
     try {
       await ensureInstanceExists(data.instanceName, data.accessToken);
 
+      console.log("[Evolution] getQrCode →", `${url}/instance/connect/${data.instanceName}`);
       const res = await fetch(`${url}/instance/connect/${data.instanceName}`, {
         method: "GET",
         headers: {
@@ -144,6 +153,7 @@ export const getQrCode = createServerFn({ method: "POST" })
       });
       const rawBody = await res.text();
       const body = parseJsonSafely(rawBody) ?? rawBody;
+      console.log("[Evolution] getQrCode ←", res.status, typeof body === "string" ? body.slice(0, 400) : JSON.stringify(body).slice(0, 400));
 
       if (!res.ok) {
         return {
