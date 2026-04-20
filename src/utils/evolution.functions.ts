@@ -57,6 +57,24 @@ function extractQrCode(payload: unknown): string | null {
   return null;
 }
 
+function isAlreadyInUseResponse(status: number, payload: unknown) {
+  if (status !== 403 || !payload || typeof payload !== "object") return false;
+
+  const response = payload as {
+    response?: { message?: string[] | string };
+    message?: string[] | string;
+  };
+
+  const rawMessage = response.response?.message ?? response.message;
+  const messages = Array.isArray(rawMessage) ? rawMessage : [rawMessage];
+
+  return messages.some(
+    (message) =>
+      typeof message === "string" &&
+      /already in use|já está em uso|name .* in use/i.test(message),
+  );
+}
+
 async function ensureInstanceExists(instanceName: string, accessToken: string) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -117,11 +135,20 @@ export const createInstance = createServerFn({ method: "POST" })
       const rawBody = await res.text();
       const body = parseJsonSafely(rawBody) ?? rawBody;
       console.log("[Evolution] createInstance ←", res.status, typeof body === "string" ? body.slice(0, 300) : JSON.stringify(body).slice(0, 300));
-      if (!res.ok) {
+
+      const alreadyInUse = isAlreadyInUseResponse(res.status, body);
+
+      if (!res.ok && !alreadyInUse) {
         return {
           success: false,
           error: `Evolution API erro [${res.status}]: ${typeof body === "string" ? body : JSON.stringify(body)}`,
         };
+      }
+
+      if (alreadyInUse) {
+        console.warn("[Evolution] createInstance: nome já existe na Evolution, reutilizando instância", {
+          instanceName: data.instanceName,
+        });
       }
 
       // Extrai dados úteis da resposta
