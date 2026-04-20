@@ -30,6 +30,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import {
+  buildMensagemPreview,
+  isMensagemConfigurada,
+} from "@/components/aniversarios/mensagem-config";
 
 interface Contato {
   id: string;
@@ -65,36 +69,57 @@ export function EnvioTab() {
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
-    if (!user) return;
-    const [contatosRes, instanceRes, configRes, enviosRes] = await Promise.all([
-      supabase.from("contatos").select("id, nome, telefone").order("nome"),
-      supabase
-        .from("whatsapp_instances")
-        .select("instance_name, status")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-      supabase
-        .from("config_mensagem")
-        .select("mensagem, imagem_url")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-      supabase
-        .from("envios")
-        .select("id, telefone, nome, status, erro, data_envio")
-        .eq("user_id", user.id)
-        .order("data_envio", { ascending: false })
-        .limit(10),
-    ]);
-
-    setContatos((contatosRes.data as Contato[]) ?? []);
-    if (instanceRes.data) {
-      const i = instanceRes.data as { instance_name: string; status: string };
-      setInstanceName(i.instance_name);
-      setInstanceStatus(i.status);
+    if (!user) {
+      setLoading(false);
+      return;
     }
-    setConfig((configRes.data as ConfigMensagem) ?? null);
-    setEnvios((enviosRes.data as Envio[]) ?? []);
-    setLoading(false);
+
+    setLoading(true);
+    try {
+      const [contatosRes, instanceRes, configRes, enviosRes] = await Promise.all([
+        supabase.from("contatos").select("id, nome, telefone").order("nome"),
+        supabase
+          .from("whatsapp_instances")
+          .select("instance_name, status")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("config_mensagem")
+          .select("mensagem, imagem_url")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("envios")
+          .select("id, telefone, nome, status, erro, data_envio")
+          .eq("user_id", user.id)
+          .order("data_envio", { ascending: false })
+          .limit(10),
+      ]);
+
+      if (contatosRes.error) {
+        console.error("[EnvioTab] erro ao carregar contatos", contatosRes.error);
+      }
+      if (instanceRes.error) {
+        console.error("[EnvioTab] erro ao carregar instância", instanceRes.error);
+      }
+      if (configRes.error) {
+        console.error("[EnvioTab] erro ao carregar config_mensagem", configRes.error);
+      }
+      if (enviosRes.error) {
+        console.error("[EnvioTab] erro ao carregar envios", enviosRes.error);
+      }
+
+      setContatos((contatosRes.data as Contato[]) ?? []);
+      if (instanceRes.data) {
+        const i = instanceRes.data as { instance_name: string; status: string };
+        setInstanceName(i.instance_name);
+        setInstanceStatus(i.status);
+      }
+      setConfig((configRes.data as ConfigMensagem) ?? null);
+      setEnvios((enviosRes.data as Envio[]) ?? []);
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
   useEffect(() => {
@@ -107,7 +132,7 @@ export function EnvioTab() {
       toast.error("Conecte o WhatsApp primeiro");
       return;
     }
-    if (!config) {
+    if (!isMensagemConfigurada(config)) {
       toast.error("Configure sua mensagem na aba Mensagem");
       return;
     }
@@ -172,7 +197,8 @@ export function EnvioTab() {
     );
   }
 
-  const canSend = instanceStatus === "connected" && config !== null;
+  const hasConfiguredMessage = isMensagemConfigurada(config);
+  const canSend = instanceStatus === "connected" && hasConfiguredMessage;
 
   return (
     <div className="space-y-4">
@@ -190,8 +216,10 @@ export function EnvioTab() {
                   ? "WhatsApp Conectado"
                   : "WhatsApp Desconectado"}
               </Badge>
-              <Badge variant={config ? "default" : "destructive"}>
-                {config ? "Mensagem Configurada" : "Mensagem Não Configurada"}
+              <Badge variant={hasConfiguredMessage ? "default" : "destructive"}>
+                {hasConfiguredMessage
+                  ? "Mensagem Configurada"
+                  : "Mensagem Não Configurada"}
               </Badge>
             </div>
           </div>
@@ -201,7 +229,7 @@ export function EnvioTab() {
         </CardHeader>
       </Card>
 
-      {!config && (
+      {!hasConfiguredMessage && (
         <Card className="border-destructive/50 bg-destructive/5">
           <CardContent className="flex items-center gap-3 py-4">
             <AlertCircle className="h-5 w-5 text-destructive" />
@@ -267,14 +295,14 @@ export function EnvioTab() {
             </div>
           </div>
 
-          {config && (
+          {hasConfiguredMessage && (
             <div className="rounded-md border bg-muted/30 p-3">
               <p className="mb-1 text-xs font-medium text-muted-foreground">
                 Preview da mensagem:
               </p>
               <p className="whitespace-pre-wrap text-sm">
-                {config.mensagem.replace(
-                  /{nome}/g,
+                {buildMensagemPreview(
+                  config?.mensagem,
                   contatos.find((c) => c.id === selectedContato)?.nome ||
                     customNome ||
                     "João",

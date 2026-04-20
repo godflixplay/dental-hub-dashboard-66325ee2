@@ -13,6 +13,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { toast } from "sonner";
+import {
+  buildMensagemPreview,
+  DEFAULT_MENSAGEM_ANIVERSARIO,
+} from "@/components/aniversarios/mensagem-config";
 
 interface ConfigMensagem {
   id: string;
@@ -20,38 +24,74 @@ interface ConfigMensagem {
   imagem_url: string | null;
 }
 
-const DEFAULT_MSG =
-  "🎂 Feliz aniversário, {nome}! A equipe da clínica deseja a você um dia incrível! 🎉";
-
 export function MensagemTab() {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [config, setConfig] = useState<ConfigMensagem | null>(null);
-  const [mensagem, setMensagem] = useState(DEFAULT_MSG);
+  const [mensagem, setMensagem] = useState(DEFAULT_MENSAGEM_ANIVERSARIO);
   const [imagemUrl, setImagemUrl] = useState<string | null>(null);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
 
   const fetchConfig = useCallback(async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from("config_mensagem")
-      .select("id, mensagem, imagem_url")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (data) {
-      const c = data as ConfigMensagem;
-      setConfig(c);
-      setMensagem(c.mensagem);
-      setImagemUrl(c.imagem_url);
+    if (!user) {
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("config_mensagem")
+        .select("id, mensagem, imagem_url")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        const c = data as ConfigMensagem;
+        setConfig(c);
+        setMensagem(c.mensagem);
+        setImagemUrl(c.imagem_url);
+      } else {
+        setConfig(null);
+        setMensagem(DEFAULT_MENSAGEM_ANIVERSARIO);
+        setImagemUrl(null);
+      }
+    } catch (error) {
+      console.error("[MensagemTab] erro ao carregar configuração", error);
+      setConfig(null);
+      setMensagem(DEFAULT_MENSAGEM_ANIVERSARIO);
+      setImagemUrl(null);
+      toast.error("Não foi possível carregar a configuração da mensagem");
+    } finally {
+      setPendingFile(null);
+      setLocalPreviewUrl((current) => {
+        if (current?.startsWith("blob:")) {
+          URL.revokeObjectURL(current);
+        }
+        return null;
+      });
+      setLoading(false);
+    }
   }, [user]);
 
   useEffect(() => {
     fetchConfig();
   }, [fetchConfig]);
+
+  useEffect(() => {
+    return () => {
+      if (localPreviewUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(localPreviewUrl);
+      }
+    };
+  }, [localPreviewUrl]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -66,27 +106,46 @@ export function MensagemTab() {
       return;
     }
 
-    setUploading(true);
-    try {
-      const ext = file.name.split(".").pop() || "jpg";
-      const path = `${user.id}/banner-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("mensagens")
-        .upload(path, file, { upsert: true });
-      if (upErr) throw upErr;
+    setLocalPreviewUrl((current) => {
+      if (current?.startsWith("blob:")) {
+        URL.revokeObjectURL(current);
+      }
+      return URL.createObjectURL(file);
+    });
+    setPendingFile(file);
+    toast.success("Imagem selecionada! Clique em Salvar para confirmar.");
 
-      const { data: pub } = supabase.storage.from("mensagens").getPublicUrl(path);
-      setImagemUrl(pub.publicUrl);
-      toast.success("Imagem carregada! Clique em Salvar para confirmar.");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro no upload");
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
+    if (fileRef.current) {
+      fileRef.current.value = "";
     }
   };
 
+  const uploadPendingFile = async () => {
+    if (!user || !pendingFile) return imagemUrl;
+
+    const ext = pendingFile.name.split(".").pop() || "jpg";
+    const path = `${user.id}/banner-${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage
+      .from("mensagens")
+      .upload(path, pendingFile, { upsert: true });
+
+    if (uploadError) {
+      console.error("[MensagemTab] erro no upload da imagem", uploadError);
+      throw uploadError;
+    }
+
+    const { data } = supabase.storage.from("mensagens").getPublicUrl(path);
+    return data.publicUrl;
+  };
+
   const handleRemoveImage = () => {
+    setLocalPreviewUrl((current) => {
+      if (current?.startsWith("blob:")) {
+        URL.revokeObjectURL(current);
+      }
+      return null;
+    });
+    setPendingFile(null);
     setImagemUrl(null);
   };
 
@@ -98,19 +157,45 @@ export function MensagemTab() {
     }
     setSaving(true);
     try {
+      let nextImagemUrl = imagemUrl;
+
+      if (pendingFile) {
+        try {
+          nextImagemUrl = await uploadPendingFile();
+        } catch (error) {
+          toast.warning(
+            "A mensagem será salva sem trocar a imagem porque o upload falhou.",
+          );
+        }
+      }
+
       const payload = {
         user_id: user.id,
         mensagem: mensagem.trim(),
-        imagem_url: imagemUrl,
+        imagem_url: nextImagemUrl,
         updated_at: new Date().toISOString(),
       };
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("config_mensagem")
-        .upsert(payload, { onConflict: "user_id" });
+        .upsert(payload, { onConflict: "user_id" })
+        .select("id, mensagem, imagem_url")
+        .single();
       if (error) throw error;
+
+      const savedConfig = data as ConfigMensagem;
+      setConfig(savedConfig);
+      setMensagem(savedConfig.mensagem);
+      setImagemUrl(savedConfig.imagem_url);
+      setPendingFile(null);
+      setLocalPreviewUrl((current) => {
+        if (current?.startsWith("blob:")) {
+          URL.revokeObjectURL(current);
+        }
+        return null;
+      });
       toast.success("Mensagem salva!");
-      fetchConfig();
     } catch (err) {
+      console.error("[MensagemTab] erro ao salvar configuração", err);
       toast.error(err instanceof Error ? err.message : "Erro ao salvar");
     } finally {
       setSaving(false);
@@ -125,7 +210,8 @@ export function MensagemTab() {
     );
   }
 
-  const previewMsg = mensagem.replace(/{nome}/g, "João");
+  const previewMsg = buildMensagemPreview(mensagem, "João");
+  const previewImage = localPreviewUrl ?? imagemUrl;
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -169,12 +255,12 @@ export function MensagemTab() {
                 type="button"
                 variant="outline"
                 onClick={() => fileRef.current?.click()}
-                disabled={uploading}
+                disabled={saving}
               >
                 <Upload className="mr-2 h-4 w-4" />
-                {uploading ? "Enviando..." : imagemUrl ? "Trocar" : "Selecionar"}
+                {previewImage ? "Trocar" : "Selecionar"}
               </Button>
-              {imagemUrl && (
+              {previewImage && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -206,12 +292,13 @@ export function MensagemTab() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-lg bg-[oklch(0.95_0.02_140)] p-4 dark:bg-[oklch(0.25_0.02_140)]">
-            <div className="ml-auto max-w-[85%] rounded-lg rounded-tr-sm bg-[oklch(0.92_0.08_140)] p-2 shadow-sm dark:bg-[oklch(0.4_0.08_140)]">
-              {imagemUrl ? (
+          <div className="rounded-lg border bg-muted/30 p-4">
+            <div className="ml-auto max-w-[85%] rounded-lg rounded-tr-sm border bg-background p-2 shadow-sm">
+              {previewImage ? (
                 <img
-                  src={imagemUrl}
-                  alt="Banner"
+                  src={previewImage}
+                  alt="Preview da imagem da mensagem de aniversário"
+                  loading="lazy"
                   className="mb-2 max-h-64 w-full rounded object-cover"
                 />
               ) : (
@@ -228,11 +315,15 @@ export function MensagemTab() {
               </p>
             </div>
           </div>
-          {config && (
+          {pendingFile ? (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Imagem selecionada. Clique em Salvar para aplicar essa versão.
+            </p>
+          ) : config ? (
             <p className="mt-3 text-xs text-muted-foreground">
               ✓ Configuração salva. Edite e clique em Salvar para atualizar.
             </p>
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </div>
