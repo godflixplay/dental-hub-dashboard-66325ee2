@@ -92,17 +92,23 @@ export function WhatsAppTab() {
 
     setConnecting(true);
     setQrError(null);
+    resetSteps();
     try {
       const instanceName = buildInstanceName();
 
       // 1) Garante que a instância desejada exista na Evolution e no banco
       if (!instance || instance.instance_name !== instanceName) {
+        updateStep("create", "active");
         const result = await createInstance({ data: { instanceName } });
         if (!result.success) {
+          updateStep("create", "error");
           toast.error(result.error ?? "Erro ao criar instância");
+          setQrError(result.error ?? "Erro ao criar instância");
           return;
         }
+        updateStep("create", "done");
 
+        updateStep("save", "active");
         const payload = {
           user_id: user.id,
           instance_name: instanceName,
@@ -118,21 +124,29 @@ export function WhatsAppTab() {
           : await supabase.from("whatsapp_instances").insert(payload);
 
         if (error) {
+          updateStep("save", "error");
           toast.error(error.message);
+          setQrError(error.message);
           return;
         }
+        updateStep("save", "done");
 
         if (result.data?.qrcode?.base64) {
           setQrCode(result.data.qrcode.base64);
         }
         await fetchInstance();
+      } else {
+        updateStep("create", "done");
+        updateStep("save", "done");
       }
 
       // 2) Busca/atualiza o QR Code
+      updateStep("qr", "active");
       const qrResult = await getQrCode({
         data: { instanceName, accessToken: session.access_token },
       });
       if (!qrResult.success) {
+        updateStep("qr", "error");
         setQrCode(null);
         setQrError(qrResult.error ?? "Erro ao obter QR Code");
         toast.error(qrResult.error ?? "Erro ao obter QR Code");
@@ -141,8 +155,13 @@ export function WhatsAppTab() {
       if (qrResult.data?.base64) {
         setQrCode(qrResult.data.base64);
         setQrError(null);
+        updateStep("qr", "done");
+        updateStep("scan", "active");
         toast.success("QR Code gerado! Escaneie com seu WhatsApp.");
       } else if (qrResult.data?.instance?.state === "open") {
+        updateStep("qr", "done");
+        updateStep("scan", "done");
+        updateStep("connected", "done");
         toast.success("WhatsApp já está conectado!");
         await supabase
           .from("whatsapp_instances")
@@ -152,6 +171,7 @@ export function WhatsAppTab() {
         setQrError(null);
         await fetchInstance();
       } else {
+        updateStep("qr", "error");
         setQrCode(null);
         setQrError(
           "QR Code não disponível no momento. Clique novamente para tentar gerar.",
