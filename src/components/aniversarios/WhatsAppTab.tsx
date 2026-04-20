@@ -26,7 +26,7 @@ interface Instance {
 }
 
 export function WhatsAppTab() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [instance, setInstance] = useState<Instance | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -53,48 +53,53 @@ export function WhatsAppTab() {
 
   const handleConnect = async () => {
     if (!user) return;
+    if (!session?.access_token) {
+      toast.error("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
     setConnecting(true);
     setQrError(null);
     try {
       const instanceName = buildInstanceName();
 
-      // 1) Cria instância se ainda não existir
-      if (!instance) {
+      // 1) Garante que a instância desejada exista na Evolution e no banco
+      if (!instance || instance.instance_name !== instanceName) {
         const result = await createInstance({ data: { instanceName } });
         if (!result.success) {
           toast.error(result.error ?? "Erro ao criar instância");
           return;
         }
-        const { error } = await supabase.from("whatsapp_instances").insert({
+
+        const payload = {
           user_id: user.id,
           instance_name: instanceName,
           instance_id: result.data?.instance?.instanceId ?? null,
           status: "disconnected",
-        });
+        };
+
+        const { error } = instance
+          ? await supabase
+              .from("whatsapp_instances")
+              .update(payload)
+              .eq("id", instance.id)
+          : await supabase.from("whatsapp_instances").insert(payload);
+
         if (error) {
           toast.error(error.message);
           return;
         }
+
         if (result.data?.qrcode?.base64) {
           setQrCode(result.data.qrcode.base64);
         }
         await fetchInstance();
-      } else if (instance.instance_name !== instanceName) {
-        const { error } = await supabase
-          .from("whatsapp_instances")
-          .update({ instance_name: instanceName })
-          .eq("id", instance.id);
-
-        if (error) {
-          toast.error(error.message);
-          return;
-        }
-
-        await fetchInstance();
       }
 
       // 2) Busca/atualiza o QR Code
-      const qrResult = await getQrCode({ data: { instanceName } });
+      const qrResult = await getQrCode({
+        data: { instanceName, accessToken: session.access_token },
+      });
       if (!qrResult.success) {
         setQrCode(null);
         setQrError(qrResult.error ?? "Erro ao obter QR Code");
