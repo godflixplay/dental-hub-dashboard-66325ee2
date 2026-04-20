@@ -66,6 +66,74 @@ export function WhatsAppTab() {
       connected: "pending",
     });
 
+  const StepperCard = () => {
+    const anyActivity = Object.values(steps).some((s) => s !== "pending");
+    if (!anyActivity && !connecting) return null;
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Progresso da conexão</CardTitle>
+          <CardDescription>
+            Acompanhe cada etapa do fluxo abaixo.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {STEP_ORDER.map((key, idx) => {
+            const state = steps[key];
+            const Icon =
+              state === "done"
+                ? CheckCircle2
+                : state === "active"
+                  ? Loader2
+                  : state === "error"
+                    ? Circle
+                    : Circle;
+            const colorClass =
+              state === "done"
+                ? "text-primary"
+                : state === "active"
+                  ? "text-primary"
+                  : state === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground";
+            return (
+              <div key={key} className="flex items-center gap-3 text-sm">
+                <Icon
+                  className={`h-4 w-4 ${colorClass} ${state === "active" ? "animate-spin" : ""}`}
+                />
+                <span className="text-muted-foreground">{idx + 1}.</span>
+                <span
+                  className={
+                    state === "pending"
+                      ? "text-muted-foreground"
+                      : "text-foreground"
+                  }
+                >
+                  {STEP_LABELS[key]}
+                </span>
+                {state === "active" && (
+                  <Badge variant="secondary" className="ml-auto">
+                    Em andamento
+                  </Badge>
+                )}
+                {state === "done" && (
+                  <Badge variant="default" className="ml-auto">
+                    Concluído
+                  </Badge>
+                )}
+                {state === "error" && (
+                  <Badge variant="destructive" className="ml-auto">
+                    Falhou
+                  </Badge>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+    );
+  };
+
   const fetchInstance = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
