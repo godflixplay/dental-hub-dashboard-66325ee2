@@ -6,6 +6,7 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/integrations/supabase/client"
 
 const createInstanceSchema = z.object({
   instanceName: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/),
+  accessToken: z.string().min(1),
 });
 
 const sendMessageSchema = z.object({
