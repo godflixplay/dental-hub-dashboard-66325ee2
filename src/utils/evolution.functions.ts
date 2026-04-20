@@ -143,6 +143,7 @@ export const getQrCode = createServerFn({ method: "POST" })
     try {
       await ensureInstanceExists(data.instanceName, data.accessToken);
 
+      console.log("[Evolution] getQrCode →", `${url}/instance/connect/${data.instanceName}`);
       const res = await fetch(`${url}/instance/connect/${data.instanceName}`, {
         method: "GET",
         headers: {
@@ -152,6 +153,7 @@ export const getQrCode = createServerFn({ method: "POST" })
       });
       const rawBody = await res.text();
       const body = parseJsonSafely(rawBody) ?? rawBody;
+      console.log("[Evolution] getQrCode ←", res.status, typeof body === "string" ? body.slice(0, 400) : JSON.stringify(body).slice(0, 400));
 
       if (!res.ok) {
         return {
