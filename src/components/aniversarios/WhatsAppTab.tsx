@@ -213,6 +213,8 @@ export function WhatsAppTab() {
         toast.success("WhatsApp conectado!");
         setQrCode(null);
         setQrError(null);
+        updateStep("scan", "done");
+        updateStep("connected", "done");
       } else {
         toast.info("WhatsApp ainda não conectado");
       }
