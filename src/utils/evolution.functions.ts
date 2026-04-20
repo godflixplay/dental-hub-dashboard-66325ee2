@@ -6,6 +6,7 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/integrations/supabase/client"
 
 const createInstanceSchema = z.object({
   instanceName: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/),
+  accessToken: z.string().min(1),
 });
 
 const sendMessageSchema = z.object({
@@ -122,8 +123,75 @@ export const createInstance = createServerFn({ method: "POST" })
           error: `Evolution API erro [${res.status}]: ${typeof body === "string" ? body : JSON.stringify(body)}`,
         };
       }
-      // Tenta já extrair QR Code da resposta de criação
+
+      // Extrai dados úteis da resposta
       const qr = extractQrCode(body);
+      const instanceId =
+        typeof body === "object" && body !== null
+          ? ((body as { instance?: { instanceId?: string } }).instance?.instanceId ?? null)
+          : null;
+
+      // Persiste no banco usando o token do usuário (RLS garante isolamento)
+      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false },
+        global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+      });
+
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        console.error("[Evolution] createInstance: falha ao obter usuário", userError);
+        return {
+          success: false,
+          error: "Não foi possível identificar o usuário autenticado.",
+        };
+      }
+
+      const userId = userData.user.id;
+      const payload = {
+        user_id: userId,
+        instance_name: data.instanceName,
+        instance_id: instanceId,
+        status: "disconnected",
+      };
+
+      // Verifica se já existe registro para esse usuário
+      const { data: existing, error: selectError } = await supabase
+        .from("whatsapp_instances")
+        .select("id")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (selectError) {
+        console.error("[Evolution] createInstance: erro ao consultar whatsapp_instances", selectError);
+        return {
+          success: false,
+          error: `Erro ao consultar banco: ${selectError.message}`,
+        };
+      }
+
+      const dbResult = existing
+        ? await supabase
+            .from("whatsapp_instances")
+            .update(payload)
+            .eq("id", existing.id)
+        : await supabase.from("whatsapp_instances").insert(payload);
+
+      if (dbResult.error) {
+        console.error(
+          "[Evolution] createInstance: falha ao salvar instância no banco",
+          { userId, instanceName: data.instanceName, error: dbResult.error },
+        );
+        return {
+          success: false,
+          error: `Instância criada na Evolution mas falhou ao salvar no banco: ${dbResult.error.message}`,
+        };
+      }
+
+      console.log("[Evolution] createInstance: instância salva no banco", {
+        userId,
+        instanceName: data.instanceName,
+      });
+
       return { success: true, data: body, qrCode: qr };
     } catch (error) {
       console.error("[Evolution] createInstance error", error);

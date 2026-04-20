@@ -167,40 +167,28 @@ export function WhatsAppTab() {
       // 1) Garante que a instância desejada exista na Evolution e no banco
       if (!instance || instance.instance_name !== instanceName) {
         updateStep("create", "active");
-        const result = await createInstance({ data: { instanceName } });
+        const result = await createInstance({
+          data: { instanceName, accessToken: session.access_token },
+        });
         if (!result.success) {
-          updateStep("create", "error");
+          const isDbError =
+            result.error?.includes("salvar no banco") ||
+            result.error?.includes("consultar banco");
+          if (isDbError) {
+            updateStep("create", "done");
+            updateStep("save", "error");
+          } else {
+            updateStep("create", "error");
+          }
           toast.error(result.error ?? "Erro ao criar instância");
           setQrError(result.error ?? "Erro ao criar instância");
           return;
         }
         updateStep("create", "done");
-
-        updateStep("save", "active");
-        const payload = {
-          user_id: user.id,
-          instance_name: instanceName,
-          instance_id: result.data?.instance?.instanceId ?? null,
-          status: "disconnected",
-        };
-
-        const { error } = instance
-          ? await supabase
-              .from("whatsapp_instances")
-              .update(payload)
-              .eq("id", instance.id)
-          : await supabase.from("whatsapp_instances").insert(payload);
-
-        if (error) {
-          updateStep("save", "error");
-          toast.error(error.message);
-          setQrError(error.message);
-          return;
-        }
         updateStep("save", "done");
 
-        if (result.data?.qrcode?.base64) {
-          setQrCode(result.data.qrcode.base64);
+        if (result.qrCode) {
+          setQrCode(result.qrCode);
         }
         await fetchInstance();
       } else {
