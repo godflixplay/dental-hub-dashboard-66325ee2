@@ -6,7 +6,7 @@ import {
   getQrCode,
   getInstanceStatus,
 } from "@/utils/evolution.functions";
-import { Smartphone, QrCode, RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { Smartphone, QrCode, RefreshCw, Wifi, WifiOff, CheckCircle2, Loader2, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,6 +25,19 @@ interface Instance {
   status: string;
 }
 
+type StepKey = "create" | "save" | "qr" | "scan" | "connected";
+type StepState = "pending" | "active" | "done" | "error";
+
+const STEP_LABELS: Record<StepKey, string> = {
+  create: "Criando instância na Evolution API",
+  save: "Registrando instância no banco de dados",
+  qr: "Gerando QR Code",
+  scan: "Aguardando leitura do QR Code no celular",
+  connected: "WhatsApp conectado",
+};
+
+const STEP_ORDER: StepKey[] = ["create", "save", "qr", "scan", "connected"];
+
 export function WhatsAppTab() {
   const { user, session } = useAuth();
   const [instance, setInstance] = useState<Instance | null>(null);
@@ -33,6 +46,25 @@ export function WhatsAppTab() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [qrError, setQrError] = useState<string | null>(null);
+  const [steps, setSteps] = useState<Record<StepKey, StepState>>({
+    create: "pending",
+    save: "pending",
+    qr: "pending",
+    scan: "pending",
+    connected: "pending",
+  });
+
+  const updateStep = (key: StepKey, state: StepState) =>
+    setSteps((prev) => ({ ...prev, [key]: state }));
+
+  const resetSteps = () =>
+    setSteps({
+      create: "pending",
+      save: "pending",
+      qr: "pending",
+      scan: "pending",
+      connected: "pending",
+    });
 
   const fetchInstance = useCallback(async () => {
     if (!user) return;
