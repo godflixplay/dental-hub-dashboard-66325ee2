@@ -100,6 +100,7 @@ export const createInstance = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { url, key } = getEvolutionConfig();
     try {
+      console.log("[Evolution] createInstance →", { url, instanceName: data.instanceName });
       const res = await fetch(`${url}/instance/create`, {
         method: "POST",
         headers: {
@@ -112,15 +113,20 @@ export const createInstance = createServerFn({ method: "POST" })
           qrcode: true,
         }),
       });
-      const body = await res.json();
+      const rawBody = await res.text();
+      const body = parseJsonSafely(rawBody) ?? rawBody;
+      console.log("[Evolution] createInstance ←", res.status, typeof body === "string" ? body.slice(0, 300) : JSON.stringify(body).slice(0, 300));
       if (!res.ok) {
         return {
           success: false,
-          error: `Evolution API error [${res.status}]: ${JSON.stringify(body)}`,
+          error: `Evolution API erro [${res.status}]: ${typeof body === "string" ? body : JSON.stringify(body)}`,
         };
       }
-      return { success: true, data: body };
+      // Tenta já extrair QR Code da resposta de criação
+      const qr = extractQrCode(body);
+      return { success: true, data: body, qrCode: qr };
     } catch (error) {
+      console.error("[Evolution] createInstance error", error);
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
