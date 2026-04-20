@@ -16,10 +16,7 @@ const sendMessageSchema = z.object({
 
 const instanceNameSchema = z.object({
   instanceName: z.string().min(1).max(100),
-});
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
+  accessToken: z.string().min(1),
 });
 
 function parseJsonSafely(text: string) {
@@ -55,7 +52,16 @@ function extractQrCode(payload: unknown): string | null {
   return null;
 }
 
-async function ensureInstanceExists(instanceName: string) {
+async function ensureInstanceExists(instanceName: string, accessToken: string) {
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  });
+
   const { data, error } = await supabase
     .from("whatsapp_instances")
     .select("id, instance_name")
@@ -123,7 +129,7 @@ export const getQrCode = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { url, key } = getEvolutionConfig();
     try {
-      await ensureInstanceExists(data.instanceName);
+      await ensureInstanceExists(data.instanceName, data.accessToken);
 
       const res = await fetch(`${url}/instance/connect/${data.instanceName}`, {
         method: "GET",
