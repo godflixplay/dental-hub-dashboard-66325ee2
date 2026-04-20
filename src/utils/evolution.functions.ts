@@ -58,20 +58,35 @@ function extractQrCode(payload: unknown): string | null {
 }
 
 function isAlreadyInUseResponse(status: number, payload: unknown) {
-  if (status !== 403 || !payload || typeof payload !== "object") return false;
+  // Evolution API costuma retornar 403 ou 409 quando o nome já existe
+  if (status !== 403 && status !== 409) return false;
+  if (!payload) return false;
+
+  // Caso payload seja string crua
+  if (typeof payload === "string") {
+    return /already in use|já está em uso|already exists|name .* in use/i.test(
+      payload,
+    );
+  }
+
+  if (typeof payload !== "object") return false;
 
   const response = payload as {
     response?: { message?: string[] | string };
     message?: string[] | string;
+    error?: string;
   };
 
-  const rawMessage = response.response?.message ?? response.message;
+  const rawMessage =
+    response.response?.message ?? response.message ?? response.error;
   const messages = Array.isArray(rawMessage) ? rawMessage : [rawMessage];
 
   return messages.some(
     (message) =>
       typeof message === "string" &&
-      /already in use|já está em uso|name .* in use/i.test(message),
+      /already in use|já está em uso|already exists|name .* in use/i.test(
+        message,
+      ),
   );
 }
 
