@@ -19,6 +19,10 @@ const instanceNameSchema = z.object({
   accessToken: z.string().min(1),
 });
 
+const statusInstanceNameSchema = z.object({
+  instanceName: z.string().min(1).max(100),
+});
+
 function parseJsonSafely(text: string) {
   if (!text) return null;
   try {
@@ -184,8 +188,8 @@ export const getQrCode = createServerFn({ method: "POST" })
   });
 
 export const getInstanceStatus = createServerFn({ method: "POST" })
-  .inputValidator((input: z.infer<typeof instanceNameSchema>) =>
-    instanceNameSchema.parse(input),
+  .inputValidator((input: z.infer<typeof statusInstanceNameSchema>) =>
+    statusInstanceNameSchema.parse(input),
   )
   .handler(async ({ data }) => {
     const { url, key } = getEvolutionConfig();
