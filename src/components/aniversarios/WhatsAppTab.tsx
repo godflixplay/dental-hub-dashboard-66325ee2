@@ -8,8 +8,6 @@ import {
 } from "@/utils/evolution.functions";
 import { Smartphone, QrCode, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
@@ -31,10 +29,8 @@ export function WhatsAppTab() {
   const { user } = useAuth();
   const [instance, setInstance] = useState<Instance | null>(null);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
-  const [qrLoading, setQrLoading] = useState(false);
-  const [instanceName, setInstanceName] = useState("");
   const [checking, setChecking] = useState(false);
 
   const fetchInstance = useCallback(async () => {
@@ -52,70 +48,63 @@ export function WhatsAppTab() {
     fetchInstance();
   }, [fetchInstance]);
 
-  const handleCreate = async () => {
-    if (!user || !instanceName.trim()) return;
-    setCreating(true);
+  // Regra: 1 usuário = 1 instância, nome derivado do user_id
+  const buildInstanceName = (userId: string) =>
+    `user_${userId.replace(/-/g, "")}`;
+
+  const handleConnect = async () => {
+    if (!user) return;
+    setConnecting(true);
     try {
-      const result = await createInstance({
-        data: { instanceName: instanceName.trim() },
-      });
-      if (!result.success) {
-        toast.error(result.error ?? "Erro ao criar instância");
+      const instanceName = instance?.instance_name ?? buildInstanceName(user.id);
+
+      // 1) Cria instância se ainda não existir
+      if (!instance) {
+        const result = await createInstance({ data: { instanceName } });
+        if (!result.success) {
+          toast.error(result.error ?? "Erro ao criar instância");
+          return;
+        }
+        const { error } = await supabase.from("whatsapp_instances").insert({
+          user_id: user.id,
+          instance_name: instanceName,
+          instance_id: result.data?.instance?.instanceId ?? null,
+          status: "disconnected",
+        });
+        if (error) {
+          toast.error(error.message);
+          return;
+        }
+        if (result.data?.qrcode?.base64) {
+          setQrCode(result.data.qrcode.base64);
+        }
+        await fetchInstance();
+      }
+
+      // 2) Busca/atualiza o QR Code
+      const qrResult = await getQrCode({ data: { instanceName } });
+      if (!qrResult.success) {
+        toast.error(qrResult.error ?? "Erro ao obter QR Code");
         return;
       }
-
-      const { error } = await supabase.from("whatsapp_instances").insert({
-        user_id: user.id,
-        instance_name: instanceName.trim(),
-        instance_id: result.data?.instance?.instanceId ?? null,
-        status: "disconnected",
-      });
-
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-
-      toast.success("Instância criada!");
-      // Show QR code from creation response
-      if (result.data?.qrcode?.base64) {
-        setQrCode(result.data.qrcode.base64);
-      }
-      fetchInstance();
-    } catch {
-      toast.error("Erro ao criar instância");
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleGetQr = async () => {
-    if (!instance) return;
-    setQrLoading(true);
-    try {
-      const result = await getQrCode({
-        data: { instanceName: instance.instance_name },
-      });
-      if (!result.success) {
-        toast.error(result.error ?? "Erro ao obter QR Code");
-        return;
-      }
-      if (result.data?.base64) {
-        setQrCode(result.data.base64);
-      } else if (result.data?.instance?.state === "open") {
+      if (qrResult.data?.base64) {
+        setQrCode(qrResult.data.base64);
+        toast.success("QR Code gerado! Escaneie com seu WhatsApp.");
+      } else if (qrResult.data?.instance?.state === "open") {
         toast.success("WhatsApp já está conectado!");
         await supabase
           .from("whatsapp_instances")
           .update({ status: "connected" })
-          .eq("id", instance.id);
-        fetchInstance();
+          .eq("user_id", user.id);
+        setQrCode(null);
+        await fetchInstance();
       } else {
-        toast.info("QR Code não disponível. Tente novamente.");
+        toast.info("QR Code não disponível. Tente novamente em instantes.");
       }
     } catch {
-      toast.error("Erro ao obter QR Code");
+      toast.error("Erro ao conectar WhatsApp");
     } finally {
-      setQrLoading(false);
+      setConnecting(false);
     }
   };
 
@@ -161,6 +150,7 @@ export function WhatsAppTab() {
     );
   }
 
+  // Estado: ainda não criou instância
   if (!instance) {
     return (
       <Card>
@@ -170,26 +160,14 @@ export function WhatsAppTab() {
           </div>
           <CardTitle>Conectar WhatsApp</CardTitle>
           <CardDescription>
-            Crie uma instância para conectar seu WhatsApp e começar a enviar
-            mensagens automáticas.
+            Cada conta tem sua própria instância de WhatsApp. Clique abaixo para
+            criar a sua e escanear o QR Code.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label>Nome da Instância</Label>
-            <Input
-              placeholder="minha-clinica"
-              value={instanceName}
-              onChange={(e) =>
-                setInstanceName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))
-              }
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Use apenas letras, números, hífen e underscore
-            </p>
-          </div>
-          <Button onClick={handleCreate} disabled={creating || !instanceName}>
-            {creating ? "Criando..." : "Criar Instância"}
+        <CardContent>
+          <Button onClick={handleConnect} disabled={connecting}>
+            <Smartphone className="mr-2 h-4 w-4" />
+            {connecting ? "Conectando..." : "Conectar WhatsApp"}
           </Button>
         </CardContent>
       </Card>
@@ -208,10 +186,10 @@ export function WhatsAppTab() {
                 <WifiOff className="h-5 w-5 text-destructive" />
               )}
               <div>
-                <CardTitle className="text-lg">
+                <CardTitle className="text-lg">Sua instância</CardTitle>
+                <CardDescription className="font-mono text-xs">
                   {instance.instance_name}
-                </CardTitle>
-                <CardDescription>Instância do WhatsApp</CardDescription>
+                </CardDescription>
               </div>
             </div>
             <Badge
@@ -223,16 +201,15 @@ export function WhatsAppTab() {
             </Badge>
           </div>
         </CardHeader>
-        <CardContent className="flex gap-2">
+        <CardContent className="flex flex-wrap gap-2">
           {instance.status !== "connected" && (
             <Button
               size="sm"
-              variant="outline"
-              onClick={handleGetQr}
-              disabled={qrLoading}
+              onClick={handleConnect}
+              disabled={connecting}
             >
               <QrCode className="mr-1 h-4 w-4" />
-              {qrLoading ? "Carregando..." : "Gerar QR Code"}
+              {connecting ? "Gerando QR..." : "Conectar / Gerar QR Code"}
             </Button>
           )}
           <Button
@@ -244,12 +221,26 @@ export function WhatsAppTab() {
             <RefreshCw
               className={`mr-1 h-4 w-4 ${checking ? "animate-spin" : ""}`}
             />
-            Verificar Status
+            Atualizar Status
           </Button>
         </CardContent>
       </Card>
 
-      {qrCode && (
+      {instance.status === "connected" && (
+        <Card>
+          <CardContent className="flex items-center gap-3 py-6">
+            <Wifi className="h-6 w-6 text-green-500" />
+            <div>
+              <p className="font-medium">WhatsApp conectado</p>
+              <p className="text-sm text-muted-foreground">
+                Você já pode enviar mensagens pela aba Envio.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {qrCode && instance.status !== "connected" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Escaneie o QR Code</CardTitle>
