@@ -305,7 +305,8 @@ export function WhatsAppTab() {
   // Estado: ainda não criou instância
   if (!instance) {
     return (
-      <Card>
+      <div className="space-y-4">
+        <Card>
         <CardHeader>
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Smartphone className="h-5 w-5" />
@@ -322,12 +323,15 @@ export function WhatsAppTab() {
             {connecting ? "Conectando..." : "Conectar WhatsApp"}
           </Button>
         </CardContent>
-      </Card>
+        </Card>
+        <StepperCard />
+      </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      <StepperCard />
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
