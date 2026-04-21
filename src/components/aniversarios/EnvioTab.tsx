@@ -239,6 +239,63 @@ export function EnvioTab() {
     ]);
   }, [queryClient, userId]);
 
+  // Realtime: novos envios aparecem no topo, updates de status atualizam a
+  // linha existente, sem duplicar registros. Filtra por user_id para
+  // garantir isolamento multi-tenant.
+  useEffect(() => {
+    if (!userId) return;
+    const queryKey = ["aniv:envios", userId];
+
+    const mapRow = (row: Record<string, unknown>): Envio => ({
+      id: String(row.id),
+      telefone: String(row.telefone ?? ""),
+      nome: (row.nome as string | null) ?? null,
+      status: String(row.status ?? ""),
+      erro: (row.erro as string | null) ?? null,
+      data_envio: String(row.created_at ?? new Date().toISOString()),
+    });
+
+    const channel = supabase
+      .channel(`envios_whatsapp:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "envios_whatsapp",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const novo = mapRow(payload.new as Record<string, unknown>);
+          queryClient.setQueryData<Envio[]>(queryKey, (prev = []) => {
+            if (prev.some((e) => e.id === novo.id)) return prev;
+            return [novo, ...prev].slice(0, 50);
+          });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "envios_whatsapp",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const atualizado = mapRow(payload.new as Record<string, unknown>);
+          queryClient.setQueryData<Envio[]>(queryKey, (prev = []) =>
+            prev.map((e) => (e.id === atualizado.id ? atualizado : e)),
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, queryClient]);
+
+
   const loading =
     contatosQuery.isLoading ||
     instanceQuery.isLoading ||
