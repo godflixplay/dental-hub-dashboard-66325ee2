@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -6,7 +6,16 @@ import {
   getQrCode,
   getInstanceStatus,
 } from "@/utils/evolution.functions";
-import { Smartphone, QrCode, RefreshCw, Wifi, WifiOff, CheckCircle2, Loader2, Circle } from "lucide-react";
+import {
+  Smartphone,
+  QrCode,
+  RefreshCw,
+  Wifi,
+  WifiOff,
+  CheckCircle2,
+  Loader2,
+  Circle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -42,6 +51,20 @@ const STEP_LABELS: Record<StepKey, string> = {
 
 const STEP_ORDER: StepKey[] = ["create", "save", "qr", "scan", "connected"];
 
+const INITIAL_STEPS: Record<StepKey, StepState> = {
+  create: "pending",
+  save: "pending",
+  qr: "pending",
+  scan: "pending",
+  connected: "pending",
+};
+
+const POLL_INTERVAL_MS = 5000;
+const POLL_MAX_DURATION_MS = 2 * 60 * 1000; // 2 minutos
+const POLL_MAX_CONSECUTIVE_ERRORS = 3;
+
+const INSTANCE_NAME_FIXED = "DentalHubTeste";
+
 export function WhatsAppTab() {
   const { user, session } = useAuth();
   const [instance, setInstance] = useState<Instance | null>(null);
@@ -50,25 +73,313 @@ export function WhatsAppTab() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [qrError, setQrError] = useState<string | null>(null);
-  const [steps, setSteps] = useState<Record<StepKey, StepState>>({
-    create: "pending",
-    save: "pending",
-    qr: "pending",
-    scan: "pending",
-    connected: "pending",
-  });
+  const [steps, setSteps] =
+    useState<Record<StepKey, StepState>>(INITIAL_STEPS);
+
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollStartedAtRef = useRef<number>(0);
+  const pollErrorsRef = useRef<number>(0);
 
   const updateStep = (key: StepKey, state: StepState) =>
     setSteps((prev) => ({ ...prev, [key]: state }));
 
-  const resetSteps = () =>
-    setSteps({
-      create: "pending",
-      save: "pending",
-      qr: "pending",
-      scan: "pending",
-      connected: "pending",
-    });
+  const resetSteps = () => setSteps({ ...INITIAL_STEPS });
+
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    pollStartedAtRef.current = 0;
+    pollErrorsRef.current = 0;
+  }, []);
+
+  const markConnected = useCallback(
+    async (instanceRow: Instance | null) => {
+      stopPolling();
+      setQrCode(null);
+      setQrError(null);
+      setSteps({
+        create: "done",
+        save: "done",
+        qr: "done",
+        scan: "done",
+        connected: "done",
+      });
+      if (instanceRow) {
+        try {
+          await supabase
+            .from("whatsapp_instances")
+            .update({ status: "connected" })
+            .eq("id", instanceRow.id);
+          setInstance({ ...instanceRow, status: "connected" });
+        } catch {
+          // não bloqueia UI por falha de update
+        }
+      }
+    },
+    [stopPolling],
+  );
+
+  const fetchQrAndShow = useCallback(
+    async (instanceName: string, accessToken: string) => {
+      updateStep("qr", "active");
+      const qrResult = await getQrCode({
+        data: { instanceName, accessToken },
+      });
+      if (!qrResult.success) {
+        updateStep("qr", "error");
+        setQrCode(null);
+        setQrError(qrResult.error ?? "Erro ao obter QR Code");
+        return false;
+      }
+      if (qrResult.data?.instance?.state === "open") {
+        return "connected" as const;
+      }
+      if (qrResult.data?.base64) {
+        setQrCode(qrResult.data.base64);
+        setQrError(null);
+        updateStep("qr", "done");
+        updateStep("scan", "active");
+        return true;
+      }
+      updateStep("qr", "error");
+      setQrCode(null);
+      setQrError(
+        "QR Code não disponível no momento. Clique em 'Tentar novamente'.",
+      );
+      return false;
+    },
+    [],
+  );
+
+  const startPolling = useCallback(
+    (instanceRow: Instance) => {
+      stopPolling();
+      pollStartedAtRef.current = Date.now();
+      pollErrorsRef.current = 0;
+
+      pollIntervalRef.current = setInterval(async () => {
+        // Timeout de segurança
+        if (Date.now() - pollStartedAtRef.current > POLL_MAX_DURATION_MS) {
+          stopPolling();
+          setQrError(
+            "Tempo esgotado aguardando leitura do QR. Clique em 'Atualizar Status' ou 'Tentar novamente'.",
+          );
+          return;
+        }
+
+        try {
+          const result = await withRequestTimeout(
+            getInstanceStatus({
+              data: { instanceName: instanceRow.instance_name },
+            }),
+            "A verificação automática de status",
+          );
+
+          if (!result.success) {
+            pollErrorsRef.current += 1;
+            if (pollErrorsRef.current >= POLL_MAX_CONSECUTIVE_ERRORS) {
+              stopPolling();
+              setQrError(
+                result.error ??
+                  "Não foi possível verificar o status do WhatsApp.",
+              );
+            }
+            return;
+          }
+
+          pollErrorsRef.current = 0;
+          const state = result.data?.instance?.state ?? "disconnected";
+          if (state === "open") {
+            toast.success("WhatsApp conectado!");
+            await markConnected(instanceRow);
+          }
+        } catch (error) {
+          pollErrorsRef.current += 1;
+          if (pollErrorsRef.current >= POLL_MAX_CONSECUTIVE_ERRORS) {
+            stopPolling();
+            setQrError(getAniversariosErrorMessage(error));
+          }
+        }
+      }, POLL_INTERVAL_MS);
+    },
+    [markConnected, stopPolling],
+  );
+
+  const bootstrapConnection = useCallback(async () => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    if (!session?.access_token) {
+      setLoading(false);
+      setQrError("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
+    setLoading(true);
+    setQrError(null);
+    resetSteps();
+
+    try {
+      // [1] Verifica se já existe instância
+      const { data: existing, error: selectError } = await withRequestTimeout(
+        supabase
+          .from("whatsapp_instances")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        "O carregamento da instância do WhatsApp",
+      );
+      if (selectError) throw selectError;
+
+      const existingInstance = (existing as Instance) ?? null;
+      setInstance(existingInstance);
+
+      if (!existingInstance) {
+        // Sem instância → mostrar botão "Conectar WhatsApp"
+        return;
+      }
+
+      // [2] Existe → consulta status SEM recriar
+      updateStep("create", "done");
+      updateStep("save", "done");
+
+      const statusResult = await withRequestTimeout(
+        getInstanceStatus({
+          data: { instanceName: existingInstance.instance_name },
+        }),
+        "A verificação de status do WhatsApp",
+      );
+
+      if (!statusResult.success) {
+        setQrError(
+          statusResult.error ?? "Não foi possível verificar o status.",
+        );
+        return;
+      }
+
+      const state = statusResult.data?.instance?.state ?? "disconnected";
+
+      if (state === "open") {
+        await markConnected(existingInstance);
+        return;
+      }
+
+      // [3] Não conectado → busca QR direto (não recria instância)
+      const qrOutcome = await fetchQrAndShow(
+        existingInstance.instance_name,
+        session.access_token,
+      );
+      if (qrOutcome === "connected") {
+        await markConnected(existingInstance);
+      } else if (qrOutcome === true) {
+        startPolling(existingInstance);
+      }
+    } catch (error) {
+      setQrError(getAniversariosErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    user,
+    session?.access_token,
+    fetchQrAndShow,
+    markConnected,
+    startPolling,
+  ]);
+
+  useEffect(() => {
+    bootstrapConnection();
+    return () => {
+      stopPolling();
+    };
+  }, [bootstrapConnection, stopPolling]);
+
+  // handleConnect agora cuida APENAS de criar instância nova
+  const handleConnect = async () => {
+    if (!user) return;
+    if (!session?.access_token) {
+      toast.error("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
+    setConnecting(true);
+    setQrError(null);
+    resetSteps();
+
+    try {
+      updateStep("create", "active");
+      const result = await createInstance({
+        data: {
+          instanceName: INSTANCE_NAME_FIXED,
+          accessToken: session.access_token,
+        },
+      });
+
+      if (!result.success) {
+        const isDbError =
+          result.error?.includes("salvar no banco") ||
+          result.error?.includes("consultar banco");
+        if (isDbError) {
+          updateStep("create", "done");
+          updateStep("save", "error");
+        } else {
+          updateStep("create", "error");
+        }
+        toast.error(result.error ?? "Erro ao criar instância");
+        setQrError(result.error ?? "Erro ao criar instância");
+        return;
+      }
+
+      updateStep("create", "done");
+      updateStep("save", "done");
+
+      // Recarrega a linha recém-criada e segue o fluxo normal de status/QR
+      await bootstrapConnection();
+    } catch (error) {
+      setQrError(getAniversariosErrorMessage(error));
+      toast.error(getAniversariosErrorMessage(error));
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleCheckStatus = async () => {
+    if (!instance) return;
+    setChecking(true);
+    try {
+      const result = await withRequestTimeout(
+        getInstanceStatus({
+          data: { instanceName: instance.instance_name },
+        }),
+        "A verificação de status do WhatsApp",
+      );
+      if (!result.success) {
+        toast.error(result.error ?? "Erro ao verificar status");
+        return;
+      }
+
+      const state = result.data?.instance?.state ?? "disconnected";
+
+      if (state === "open") {
+        toast.success("WhatsApp conectado!");
+        await markConnected(instance);
+      } else {
+        toast.info("WhatsApp ainda não conectado");
+        await supabase
+          .from("whatsapp_instances")
+          .update({ status: "disconnected" })
+          .eq("id", instance.id);
+        setInstance({ ...instance, status: "disconnected" });
+      }
+    } catch (error) {
+      toast.error(getAniversariosErrorMessage(error));
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const StepperCard = () => {
     const anyActivity = Object.values(steps).some((s) => s !== "pending");
@@ -89,9 +400,7 @@ export function WhatsAppTab() {
                 ? CheckCircle2
                 : state === "active"
                   ? Loader2
-                  : state === "error"
-                    ? Circle
-                    : Circle;
+                  : Circle;
             const colorClass =
               state === "done"
                 ? "text-primary"
@@ -138,170 +447,6 @@ export function WhatsAppTab() {
     );
   };
 
-  const fetchInstance = useCallback(async () => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { data, error } = await withRequestTimeout(
-        supabase
-          .from("whatsapp_instances")
-          .select("*")
-          .eq("user_id", user.id)
-          .maybeSingle(),
-        "O carregamento da instância do WhatsApp",
-      );
-      if (error) throw error;
-      setInstance((data as Instance) ?? null);
-    } catch (error) {
-      setInstance(null);
-      setQrCode(null);
-      setQrError(getAniversariosErrorMessage(error));
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    fetchInstance();
-  }, [fetchInstance]);
-
-  const buildInstanceName = () => "DentalHubTeste";
-
-  const handleConnect = async () => {
-    if (!user) return;
-    if (!session?.access_token) {
-      toast.error("Sessão inválida. Faça login novamente.");
-      return;
-    }
-
-    setConnecting(true);
-    setQrError(null);
-    resetSteps();
-    try {
-      const instanceName = buildInstanceName();
-
-      // 1) Garante que a instância desejada exista na Evolution e no banco
-      if (!instance || instance.instance_name !== instanceName) {
-        updateStep("create", "active");
-        const result = await createInstance({
-          data: { instanceName, accessToken: session.access_token },
-        });
-        if (!result.success) {
-          const isDbError =
-            result.error?.includes("salvar no banco") ||
-            result.error?.includes("consultar banco");
-          if (isDbError) {
-            updateStep("create", "done");
-            updateStep("save", "error");
-          } else {
-            updateStep("create", "error");
-          }
-          toast.error(result.error ?? "Erro ao criar instância");
-          setQrError(result.error ?? "Erro ao criar instância");
-          return;
-        }
-        updateStep("create", "done");
-        updateStep("save", "done");
-
-        if (result.qrCode) {
-          setQrCode(result.qrCode);
-        }
-         await fetchInstance();
-      } else {
-        updateStep("create", "done");
-        updateStep("save", "done");
-      }
-
-      // 2) Busca/atualiza o QR Code
-      updateStep("qr", "active");
-      const qrResult = await getQrCode({
-        data: { instanceName, accessToken: session.access_token },
-      });
-      if (!qrResult.success) {
-        updateStep("qr", "error");
-        setQrCode(null);
-        setQrError(qrResult.error ?? "Erro ao obter QR Code");
-        toast.error(qrResult.error ?? "Erro ao obter QR Code");
-        return;
-      }
-      if (qrResult.data?.base64) {
-        setQrCode(qrResult.data.base64);
-        setQrError(null);
-        updateStep("qr", "done");
-        updateStep("scan", "active");
-        toast.success("QR Code gerado! Escaneie com seu WhatsApp.");
-      } else if (qrResult.data?.instance?.state === "open") {
-        updateStep("qr", "done");
-        updateStep("scan", "done");
-        updateStep("connected", "done");
-        toast.success("WhatsApp já está conectado!");
-        await supabase
-          .from("whatsapp_instances")
-          .update({ status: "connected" })
-          .eq("user_id", user.id);
-        setQrCode(null);
-        setQrError(null);
-        await fetchInstance();
-      } else {
-        updateStep("qr", "error");
-        setQrCode(null);
-        setQrError(
-          "QR Code não disponível no momento. Clique novamente para tentar gerar.",
-        );
-        toast.info("QR Code não disponível. Tente novamente em instantes.");
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Erro ao conectar WhatsApp";
-      setQrCode(null);
-      setQrError(message);
-       toast.error(getAniversariosErrorMessage(message));
-    } finally {
-      setConnecting(false);
-    }
-  };
-
-  const handleCheckStatus = async () => {
-    if (!instance) return;
-    setChecking(true);
-    try {
-      const result = await getInstanceStatus({
-        data: { instanceName: instance.instance_name },
-      });
-      if (!result.success) {
-        toast.error(result.error ?? "Erro ao verificar status");
-        return;
-      }
-
-      const state = result.data?.instance?.state ?? "disconnected";
-      const newStatus = state === "open" ? "connected" : "disconnected";
-
-      await supabase
-        .from("whatsapp_instances")
-        .update({ status: newStatus })
-        .eq("id", instance.id);
-
-      if (newStatus === "connected") {
-        toast.success("WhatsApp conectado!");
-        setQrCode(null);
-        setQrError(null);
-        updateStep("scan", "done");
-        updateStep("connected", "done");
-      } else {
-        toast.info("WhatsApp ainda não conectado");
-      }
-      fetchInstance();
-    } catch {
-      toast.error("Erro ao verificar status");
-    } finally {
-      setChecking(false);
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -310,29 +455,45 @@ export function WhatsAppTab() {
     );
   }
 
-  // Estado: ainda não criou instância
+  // Sem instância → botão para criar
   if (!instance) {
     return (
       <div className="space-y-4">
         <Card>
-        <CardHeader>
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Smartphone className="h-5 w-5" />
-          </div>
-          <CardTitle>Conectar WhatsApp</CardTitle>
-          <CardDescription>
-            Cada conta tem sua própria instância de WhatsApp. Clique abaixo para
-            criar a sua e escanear o QR Code.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button onClick={handleConnect} disabled={connecting}>
-            <Smartphone className="mr-2 h-4 w-4" />
-            {connecting ? "Conectando..." : "Conectar WhatsApp"}
-          </Button>
-        </CardContent>
+          <CardHeader>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Smartphone className="h-5 w-5" />
+            </div>
+            <CardTitle>Conectar WhatsApp</CardTitle>
+            <CardDescription>
+              Cada conta tem sua própria instância de WhatsApp. Clique abaixo
+              para criar a sua e escanear o QR Code.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={handleConnect} disabled={connecting}>
+              <Smartphone className="mr-2 h-4 w-4" />
+              {connecting ? "Conectando..." : "Conectar WhatsApp"}
+            </Button>
+          </CardContent>
         </Card>
         <StepperCard />
+        {qrError && (
+          <Card className="border-destructive/40">
+            <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-destructive">{qrError}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleConnect}
+                disabled={connecting}
+              >
+                <RefreshCw className="mr-1 h-4 w-4" />
+                Tentar novamente
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     );
   }
@@ -342,7 +503,7 @@ export function WhatsAppTab() {
       <StepperCard />
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               {instance.status === "connected" ? (
                 <Wifi className="h-5 w-5 text-green-500" />
@@ -352,7 +513,7 @@ export function WhatsAppTab() {
               <div>
                 <CardTitle className="text-lg">Sua instância</CardTitle>
                 <CardDescription className="font-mono text-xs">
-                  {buildInstanceName()}
+                  {instance.instance_name}
                 </CardDescription>
               </div>
             </div>
@@ -369,11 +530,11 @@ export function WhatsAppTab() {
           {instance.status !== "connected" && (
             <Button
               size="sm"
-              onClick={handleConnect}
-              disabled={connecting}
+              onClick={() => bootstrapConnection()}
+              disabled={loading}
             >
               <QrCode className="mr-1 h-4 w-4" />
-              {connecting ? "Gerando QR..." : "Conectar / Gerar QR Code"}
+              Gerar / Atualizar QR Code
             </Button>
           )}
           <Button
@@ -410,7 +571,8 @@ export function WhatsAppTab() {
             <CardTitle className="text-lg">Escaneie o QR Code</CardTitle>
             <CardDescription>
               Abra o WhatsApp no seu celular → Configurações → Dispositivos
-              conectados → Conectar dispositivo
+              conectados → Conectar dispositivo. Estamos verificando a conexão
+              automaticamente.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-center gap-4">
@@ -437,9 +599,14 @@ export function WhatsAppTab() {
         <Card className="border-destructive/40">
           <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-destructive">{qrError}</p>
-            <Button size="sm" variant="outline" onClick={handleConnect} disabled={connecting}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => bootstrapConnection()}
+              disabled={loading}
+            >
               <QrCode className="mr-1 h-4 w-4" />
-              {connecting ? "Tentando..." : "Tentar novamente"}
+              Tentar novamente
             </Button>
           </CardContent>
         </Card>
