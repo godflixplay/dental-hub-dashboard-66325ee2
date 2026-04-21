@@ -59,6 +59,25 @@ export function MensagemTab() {
     },
   });
 
+  // Instância do usuário (para compor o path da imagem por instância e
+  // gravar a URL pública em whatsapp_instances.imagem_url).
+  const instanceQuery = useQuery({
+    queryKey: ["aniv:wpp:instance", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from("whatsapp_instances")
+          .select("id, instance_name")
+          .eq("user_id", userId!)
+          .maybeSingle(),
+        "O carregamento da instância do WhatsApp",
+      );
+      if (error) throw error;
+      return (data as { id: string; instance_name: string } | null) ?? null;
+    },
+  });
+
   const config = configQuery.data ?? null;
 
   // Sincroniza o estado local com a config carregada (apenas quando muda
