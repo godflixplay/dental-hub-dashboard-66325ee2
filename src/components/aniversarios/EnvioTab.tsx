@@ -60,6 +60,7 @@ interface Envio {
   nome: string | null;
   status: string;
   erro: string | null;
+  /** Mapeado de envios_whatsapp.created_at — mantido como data_envio para a UI. */
   data_envio: string;
 }
 
