@@ -17,6 +17,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import {
+  getAniversariosErrorMessage,
+  withRequestTimeout,
+} from "@/components/aniversarios/request-utils";
 
 interface Instance {
   id: string;
@@ -135,14 +139,30 @@ export function WhatsAppTab() {
   };
 
   const fetchInstance = useCallback(async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from("whatsapp_instances")
-      .select("*")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    setInstance((data as Instance) ?? null);
-    setLoading(false);
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from("whatsapp_instances")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        "O carregamento da instância do WhatsApp",
+      );
+      if (error) throw error;
+      setInstance((data as Instance) ?? null);
+    } catch (error) {
+      setInstance(null);
+      setQrCode(null);
+      setQrError(getAniversariosErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
   useEffect(() => {
@@ -190,7 +210,7 @@ export function WhatsAppTab() {
         if (result.qrCode) {
           setQrCode(result.qrCode);
         }
-        await fetchInstance();
+         await fetchInstance();
       } else {
         updateStep("create", "done");
         updateStep("save", "done");
@@ -239,7 +259,7 @@ export function WhatsAppTab() {
         error instanceof Error ? error.message : "Erro ao conectar WhatsApp";
       setQrCode(null);
       setQrError(message);
-      toast.error(message);
+       toast.error(getAniversariosErrorMessage(message));
     } finally {
       setConnecting(false);
     }

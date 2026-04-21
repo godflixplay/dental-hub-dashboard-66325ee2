@@ -24,6 +24,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import {
+  getAniversariosErrorMessage,
+  withRequestTimeout,
+} from "@/components/aniversarios/request-utils";
 
 interface Contato {
   id: string;
@@ -46,12 +50,19 @@ export function ContatosTab() {
 
   const fetchContatos = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("contatos")
-      .select("*")
-      .order("nome", { ascending: true });
-    setContatos((data as Contato[]) ?? []);
-    setLoading(false);
+    try {
+      const { data, error } = await withRequestTimeout(
+        supabase.from("contatos").select("*").order("nome", { ascending: true }),
+        "O carregamento dos contatos",
+      );
+      if (error) throw error;
+      setContatos((data as Contato[]) ?? []);
+    } catch (error) {
+      toast.error(getAniversariosErrorMessage(error));
+      setContatos([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
