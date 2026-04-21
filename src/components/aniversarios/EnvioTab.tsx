@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { sendTextMessage } from "@/utils/evolution.functions";
+import { sendTextMessage, getInstanceStatus } from "@/utils/evolution.functions";
+import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
 import { Send, MessageSquare, AlertCircle, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,7 @@ import {
 import {
   getAniversariosErrorMessage,
   withRequestTimeout,
+  withEvolutionTimeout,
 } from "@/components/aniversarios/request-utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -130,16 +132,44 @@ export function EnvioTab() {
       }
 
       setContatos((contatosRes.data as Contato[]) ?? []);
+      let resolvedInstanceName: string | null = null;
+      let resolvedStatus = "disconnected";
       if (instanceRes.data) {
         const i = instanceRes.data as { instance_name: string; status: string };
-        setInstanceName(i.instance_name);
-        setInstanceStatus(i.status);
-      } else {
-        setInstanceName(null);
-        setInstanceStatus("disconnected");
+        resolvedInstanceName = i.instance_name;
+        resolvedStatus = i.status;
       }
+      setInstanceName(resolvedInstanceName);
+      setInstanceStatus(resolvedStatus);
       setConfig((configRes.data as ConfigMensagem) ?? null);
       setEnvios((enviosRes.data as Envio[]) ?? []);
+
+      // Sincroniza status real da Evolution (fire-and-forget, não bloqueia o render)
+      if (resolvedInstanceName && user) {
+        const instanceName = resolvedInstanceName;
+        const userId = user.id;
+        void (async () => {
+          try {
+            const statusResult = await withEvolutionTimeout(
+              getInstanceStatus({ data: { instanceName } }),
+              "A verificação de status do WhatsApp",
+            );
+            if (!statusResult.success) return;
+            const body = statusResult.data as
+              | { instance?: { state?: string }; state?: string }
+              | undefined;
+            const state = body?.instance?.state ?? body?.state;
+            const realStatus = state === "open" ? "connected" : "disconnected";
+            setInstanceStatus(realStatus);
+            await supabase
+              .from("whatsapp_instances")
+              .update({ status: realStatus })
+              .eq("user_id", userId);
+          } catch (err) {
+            console.warn("[EnvioTab] sync status falhou", err);
+          }
+        })();
+      }
     } catch (error) {
       setLoadError(getAniversariosErrorMessage(error));
       setContatos([]);
@@ -174,19 +204,29 @@ export function EnvioTab() {
     }
 
     const contato = contatos.find((c) => c.id === selectedContato);
-    const phone = contato?.telefone || customPhone.replace(/\D/g, "");
+    const rawPhone = contato?.telefone || customPhone;
     const nome = contato?.nome || customNome || "paciente";
 
-    if (!phone) {
+    if (!rawPhone) {
       toast.error("Selecione um contato ou digite um número");
       return;
     }
+
+    const normalized = normalizePhoneBR(rawPhone);
+    if (!normalized.valid) {
+      toast.error(
+        normalized.reason ??
+          "Número inválido. Use formato 55DDXXXXXXXXX (ex: 5521981089100).",
+      );
+      return;
+    }
+    const phone = normalized.phone;
 
     setSending(true);
     const finalMessage = buildMensagemPreview(mensagemTemplate, nome);
 
     try {
-      const result = await withRequestTimeout(
+      const result = await withEvolutionTimeout(
         sendTextMessage({
           data: { instanceName, phone, message: finalMessage },
         }),

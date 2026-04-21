@@ -28,6 +28,7 @@ import {
   getAniversariosErrorMessage,
   withRequestTimeout,
 } from "@/components/aniversarios/request-utils";
+import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
 
 interface Contato {
   id: string;
@@ -81,6 +82,7 @@ export function ContatosTab() {
         raw: false,
       });
 
+      let rejected = 0;
       const mapped = rows
         .map((row) => {
           const nome =
@@ -102,17 +104,30 @@ export function ContatosTab() {
             row["aniversario"] ||
             row["Aniversario"] ||
             "";
+          const norm = normalizePhoneBR(telefone.toString());
           return {
             user_id: user.id,
             nome: nome.trim(),
-            telefone: telefone.toString().replace(/\D/g, ""),
+            telefone: norm.valid ? norm.phone : "",
             data_nascimento: parseDate(nascimento) || null,
+            _valid: !!nome && norm.valid,
           };
         })
-        .filter((c) => c.nome && c.telefone);
+        .filter((c) => {
+          if (!c._valid) {
+            rejected += 1;
+            return false;
+          }
+          return true;
+        })
+        .map(({ _valid, ...rest }) => rest);
 
       if (mapped.length === 0) {
-        toast.error("Nenhum contato válido encontrado na planilha");
+        toast.error(
+          rejected > 0
+            ? `Nenhum contato válido. ${rejected} rejeitados (nome ausente ou número inválido).`
+            : "Nenhum contato válido encontrado na planilha",
+        );
         return;
       }
 
@@ -120,7 +135,11 @@ export function ContatosTab() {
       if (error) {
         toast.error("Erro ao importar: " + error.message);
       } else {
-        toast.success(`${mapped.length} contatos importados!`);
+        toast.success(
+          rejected > 0
+            ? `${mapped.length} contatos importados, ${rejected} rejeitados por número inválido.`
+            : `${mapped.length} contatos importados!`,
+        );
         fetchContatos();
       }
     } catch {
@@ -153,9 +172,17 @@ export function ContatosTab() {
 
   const handleSave = async () => {
     if (!user || !form.nome || !form.telefone) return;
+    const norm = normalizePhoneBR(form.telefone);
+    if (!norm.valid) {
+      toast.error(
+        norm.reason ??
+          "Número inválido. Use formato 55DDXXXXXXXXX (ex: 5521981089100).",
+      );
+      return;
+    }
     const payload = {
       nome: form.nome.trim(),
-      telefone: form.telefone.replace(/\D/g, ""),
+      telefone: norm.phone,
       data_nascimento: form.data_nascimento || null,
       user_id: user.id,
     };

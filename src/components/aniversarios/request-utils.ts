@@ -1,4 +1,12 @@
 export const ANIVERSARIOS_REQUEST_TIMEOUT_MS = 12000;
+export const EVOLUTION_REQUEST_TIMEOUT_MS = 25000;
+
+export async function withEvolutionTimeout<T>(
+  promise: PromiseLike<T>,
+  label: string,
+) {
+  return withRequestTimeout(promise, label, EVOLUTION_REQUEST_TIMEOUT_MS);
+}
 
 export async function withRequestTimeout<T>(
   promise: PromiseLike<T>,
