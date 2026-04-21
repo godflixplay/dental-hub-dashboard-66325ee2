@@ -60,6 +60,7 @@ interface Envio {
   nome: string | null;
   status: string;
   erro: string | null;
+  /** Mapeado de envios_whatsapp.created_at — mantido como data_envio para a UI. */
   data_envio: string;
 }
 
@@ -153,15 +154,30 @@ export function EnvioTab() {
     queryFn: async () => {
       const { data, error } = await withRequestTimeout(
         supabase
-          .from("envios")
-          .select("id, telefone, nome, status, erro, data_envio")
+          .from("envios_whatsapp")
+          .select("id, telefone, nome, status, erro, created_at")
           .eq("user_id", userId!)
-          .order("data_envio", { ascending: false })
-          .limit(10),
+          .order("created_at", { ascending: false })
+          .limit(50),
         "O carregamento do histórico",
       );
       if (error) throw error;
-      return (data as Envio[]) ?? [];
+      const rows = (data ?? []) as Array<{
+        id: string;
+        telefone: string;
+        nome: string | null;
+        status: string;
+        erro: string | null;
+        created_at: string;
+      }>;
+      return rows.map<Envio>((r) => ({
+        id: r.id,
+        telefone: r.telefone,
+        nome: r.nome,
+        status: r.status,
+        erro: r.erro,
+        data_envio: r.created_at,
+      }));
     },
   });
 
@@ -222,6 +238,63 @@ export function EnvioTab() {
       queryClient.invalidateQueries({ queryKey: ["aniv:envios", userId] }),
     ]);
   }, [queryClient, userId]);
+
+  // Realtime: novos envios aparecem no topo, updates de status atualizam a
+  // linha existente, sem duplicar registros. Filtra por user_id para
+  // garantir isolamento multi-tenant.
+  useEffect(() => {
+    if (!userId) return;
+    const queryKey = ["aniv:envios", userId];
+
+    const mapRow = (row: Record<string, unknown>): Envio => ({
+      id: String(row.id),
+      telefone: String(row.telefone ?? ""),
+      nome: (row.nome as string | null) ?? null,
+      status: String(row.status ?? ""),
+      erro: (row.erro as string | null) ?? null,
+      data_envio: String(row.created_at ?? new Date().toISOString()),
+    });
+
+    const channel = supabase
+      .channel(`envios_whatsapp:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "envios_whatsapp",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const novo = mapRow(payload.new as Record<string, unknown>);
+          queryClient.setQueryData<Envio[]>(queryKey, (prev = []) => {
+            if (prev.some((e) => e.id === novo.id)) return prev;
+            return [novo, ...prev].slice(0, 50);
+          });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "envios_whatsapp",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const atualizado = mapRow(payload.new as Record<string, unknown>);
+          queryClient.setQueryData<Envio[]>(queryKey, (prev = []) =>
+            prev.map((e) => (e.id === atualizado.id ? atualizado : e)),
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, queryClient]);
+
 
   const loading =
     contatosQuery.isLoading ||
