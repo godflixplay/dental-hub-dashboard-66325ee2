@@ -154,15 +154,30 @@ export function EnvioTab() {
     queryFn: async () => {
       const { data, error } = await withRequestTimeout(
         supabase
-          .from("envios")
-          .select("id, telefone, nome, status, erro, data_envio")
+          .from("envios_whatsapp")
+          .select("id, telefone, nome, status, erro, created_at")
           .eq("user_id", userId!)
-          .order("data_envio", { ascending: false })
-          .limit(10),
+          .order("created_at", { ascending: false })
+          .limit(50),
         "O carregamento do histórico",
       );
       if (error) throw error;
-      return (data as Envio[]) ?? [];
+      const rows = (data ?? []) as Array<{
+        id: string;
+        telefone: string;
+        nome: string | null;
+        status: string;
+        erro: string | null;
+        created_at: string;
+      }>;
+      return rows.map<Envio>((r) => ({
+        id: r.id,
+        telefone: r.telefone,
+        nome: r.nome,
+        status: r.status,
+        erro: r.erro,
+        data_envio: r.created_at,
+      }));
     },
   });
 
