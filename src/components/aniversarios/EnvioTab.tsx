@@ -132,16 +132,46 @@ export function EnvioTab() {
       }
 
       setContatos((contatosRes.data as Contato[]) ?? []);
+      let resolvedInstanceName: string | null = null;
+      let resolvedStatus = "disconnected";
       if (instanceRes.data) {
         const i = instanceRes.data as { instance_name: string; status: string };
-        setInstanceName(i.instance_name);
-        setInstanceStatus(i.status);
-      } else {
-        setInstanceName(null);
-        setInstanceStatus("disconnected");
+        resolvedInstanceName = i.instance_name;
+        resolvedStatus = i.status;
       }
+      setInstanceName(resolvedInstanceName);
+      setInstanceStatus(resolvedStatus);
       setConfig((configRes.data as ConfigMensagem) ?? null);
       setEnvios((enviosRes.data as Envio[]) ?? []);
+
+      // Sincroniza status real da Evolution (fire-and-forget, não bloqueia o render)
+      if (resolvedInstanceName && user) {
+        const instanceName = resolvedInstanceName;
+        const userId = user.id;
+        void (async () => {
+          try {
+            const accessToken =
+              (await supabase.auth.getSession()).data.session?.access_token ?? "";
+            if (!accessToken) return;
+            const statusResult = await withEvolutionTimeout(
+              getInstanceStatus({
+                data: { instanceName, accessToken },
+              }),
+              "A verificação de status do WhatsApp",
+            );
+            if (!statusResult.success) return;
+            const realStatus =
+              statusResult.state === "open" ? "connected" : "disconnected";
+            setInstanceStatus(realStatus);
+            await supabase
+              .from("whatsapp_instances")
+              .update({ status: realStatus })
+              .eq("user_id", userId);
+          } catch (err) {
+            console.warn("[EnvioTab] sync status falhou", err);
+          }
+        })();
+      }
     } catch (error) {
       setLoadError(getAniversariosErrorMessage(error));
       setContatos([]);
