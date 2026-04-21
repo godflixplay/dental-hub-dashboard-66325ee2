@@ -74,6 +74,8 @@ function buildInstanceName(userId: string): string {
 
 export function WhatsAppTab() {
   const { user, session } = useAuth();
+  const queryClient = useQueryClient();
+  const userId = user?.id;
   const [instance, setInstance] = useState<Instance | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -86,6 +88,27 @@ export function WhatsAppTab() {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollStartedAtRef = useRef<number>(0);
   const pollErrorsRef = useRef<number>(0);
+  // Garante que bootstrapConnection só roda 1× por instância carregada do
+  // cache. Voltar à aba dentro do staleTime NÃO refaz QR / polling.
+  const bootstrappedForRef = useRef<string | null>(null);
+
+  // Carrega a instância via useQuery (cache de 30s entre navegações).
+  const instanceQuery = useQuery({
+    queryKey: ["aniv:wpp:instance", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from("whatsapp_instances")
+          .select("*")
+          .eq("user_id", userId!)
+          .maybeSingle(),
+        "O carregamento da instância do WhatsApp",
+      );
+      if (error) throw error;
+      return ((data as Instance) ?? null);
+    },
+  });
 
   const getAccessToken = useCallback(async () => {
     const {
