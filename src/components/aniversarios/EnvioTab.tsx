@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -67,186 +68,176 @@ interface ConfigMensagem {
   imagem_url: string | null;
 }
 
+interface InstanceRow {
+  instance_name: string;
+  status: string;
+}
+
+// Throttle do sync de status Evolution: roda no máximo 1×/min por usuário.
+const EVOLUTION_SYNC_THROTTLE_MS = 60_000;
+const lastEvolutionSyncByUser = new Map<string, number>();
+
 export function EnvioTab() {
   const { user, session } = useAuth();
-  const [contatos, setContatos] = useState<Contato[]>([]);
-  const [config, setConfig] = useState<ConfigMensagem | null>(null);
-  const [instanceName, setInstanceName] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const userId = user?.id;
+
   const [instanceStatus, setInstanceStatus] = useState<string>("disconnected");
   const [ownerNumber, setOwnerNumber] = useState<string | null>(null);
-  const [envios, setEnvios] = useState<Envio[]>([]);
   const [selectedContato, setSelectedContato] = useState("");
   const [customPhone, setCustomPhone] = useState("");
   const [customNome, setCustomNome] = useState("");
   const [sending, setSending] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   const getAccessToken = useCallback(async () => {
     const {
       data: { session: liveSession },
     } = await supabase.auth.getSession();
     const accessToken = liveSession?.access_token ?? session?.access_token;
-
-    if (!accessToken) {
-      throw new Error("Sem sessão");
-    }
-
+    if (!accessToken) throw new Error("Sem sessão");
     return accessToken;
   }, [session?.access_token]);
 
-  const fetchAll = useCallback(async () => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
+  // Queries: cada uma com sua chave, cache compartilhado de 30s vindo do
+  // QueryClient global. Trocar de aba/voltar para a página é instantâneo.
+  const contatosQuery = useQuery({
+    queryKey: ["aniv:contatos", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await withRequestTimeout(
+        supabase.from("contatos").select("id, nome, telefone").order("nome"),
+        "O carregamento dos contatos",
+      );
+      if (error) throw error;
+      return (data as Contato[]) ?? [];
+    },
+  });
 
-    setLoading(true);
-    setLoadError(null);
+  const instanceQuery = useQuery({
+    queryKey: ["aniv:instance", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from("whatsapp_instances")
+          .select("instance_name, status")
+          .eq("user_id", userId!)
+          .maybeSingle(),
+        "O carregamento da instância",
+      );
+      if (error) throw error;
+      return (data as InstanceRow | null) ?? null;
+    },
+  });
 
-    // Etapa 1: carrega tudo do Supabase em paralelo, com Promise.allSettled
-    // para que uma consulta lenta/falha NÃO derrube as outras nem trave a aba.
-    try {
-      const [contatosRes, instanceRes, configRes, enviosRes] =
-        await Promise.allSettled([
-          withRequestTimeout(
-            supabase.from("contatos").select("id, nome, telefone").order("nome"),
-            "O carregamento dos contatos",
-          ),
-          withRequestTimeout(
-            supabase
-              .from("whatsapp_instances")
-              .select("instance_name, status")
-              .eq("user_id", user.id)
-              .maybeSingle(),
-            "O carregamento da instância",
-          ),
-          withRequestTimeout(
-            supabase
-              .from("config_mensagem")
-              .select("mensagem, imagem_url")
-              .eq("user_id", user.id)
-              .maybeSingle(),
-            "O carregamento da configuração",
-          ),
-          withRequestTimeout(
-            supabase
-              .from("envios")
-              .select("id, telefone, nome, status, erro, data_envio")
-              .eq("user_id", user.id)
-              .order("data_envio", { ascending: false })
-              .limit(10),
-            "O carregamento do histórico",
-          ),
-        ]);
+  const configQuery = useQuery({
+    queryKey: ["aniv:config", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from("config_mensagem")
+          .select("mensagem, imagem_url")
+          .eq("user_id", userId!)
+          .maybeSingle(),
+        "O carregamento da configuração",
+      );
+      if (error) throw error;
+      return (data as ConfigMensagem | null) ?? null;
+    },
+  });
 
-      const errors: unknown[] = [];
+  const enviosQuery = useQuery({
+    queryKey: ["aniv:envios", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from("envios")
+          .select("id, telefone, nome, status, erro, data_envio")
+          .eq("user_id", userId!)
+          .order("data_envio", { ascending: false })
+          .limit(10),
+        "O carregamento do histórico",
+      );
+      if (error) throw error;
+      return (data as Envio[]) ?? [];
+    },
+  });
 
-      if (contatosRes.status === "fulfilled" && !contatosRes.value.error) {
-        setContatos((contatosRes.value.data as Contato[]) ?? []);
-      } else {
-        setContatos([]);
-        errors.push(
-          contatosRes.status === "rejected"
-            ? contatosRes.reason
-            : contatosRes.value.error,
-        );
-      }
+  const contatos = contatosQuery.data ?? [];
+  const instanceRow = instanceQuery.data ?? null;
+  const config = configQuery.data ?? null;
+  const envios = enviosQuery.data ?? [];
+  const instanceName = instanceRow?.instance_name ?? null;
 
-      let resolvedInstanceName: string | null = null;
-      let resolvedStatus = "disconnected";
-      if (instanceRes.status === "fulfilled" && !instanceRes.value.error) {
-        const i = instanceRes.value.data as
-          | { instance_name: string; status: string }
-          | null;
-        if (i) {
-          resolvedInstanceName = i.instance_name;
-          resolvedStatus = i.status;
-        }
-      } else {
-        errors.push(
-          instanceRes.status === "rejected"
-            ? instanceRes.reason
-            : instanceRes.value.error,
-        );
-      }
-      setInstanceName(resolvedInstanceName);
-      setInstanceStatus(resolvedStatus);
-
-      if (configRes.status === "fulfilled" && !configRes.value.error) {
-        setConfig((configRes.value.data as ConfigMensagem) ?? null);
-      } else {
-        setConfig(null);
-        errors.push(
-          configRes.status === "rejected"
-            ? configRes.reason
-            : configRes.value.error,
-        );
-      }
-
-      if (enviosRes.status === "fulfilled" && !enviosRes.value.error) {
-        setEnvios((enviosRes.value.data as Envio[]) ?? []);
-      } else {
-        setEnvios([]);
-        errors.push(
-          enviosRes.status === "rejected"
-            ? enviosRes.reason
-            : enviosRes.value.error,
-        );
-      }
-
-      // Só mostra alerta de carregamento se TUDO falhou; falhas parciais
-      // ficam silenciosas (logadas) e a tela continua utilizável.
-      if (errors.length === 4) {
-        setLoadError(getAniversariosErrorMessage(errors[0]));
-      } else if (errors.length > 0) {
-        console.warn("[EnvioTab] erros parciais ao carregar", errors);
-      }
-
-      // Etapa 2: sincroniza status real da Evolution em background.
-      // NÃO bloqueia render. Erro/timeout aqui não afeta a aba.
-      if (resolvedInstanceName) {
-        const instanceNameLocal = resolvedInstanceName;
-        const userId = user.id;
-        void (async () => {
-          try {
-            const accessToken = await getAccessToken();
-            const statusResult = await withEvolutionTimeout(
-              getInstanceStatus({
-                data: { instanceName: instanceNameLocal, accessToken },
-              }),
-              "A verificação de status do WhatsApp",
-            );
-            if (!statusResult.success) return;
-            const body = statusResult.data as
-              | { instance?: { state?: string }; state?: string }
-              | undefined;
-            const state = body?.instance?.state ?? body?.state;
-            const realStatus = state === "open" ? "connected" : "disconnected";
-            setInstanceStatus(realStatus);
-            if (statusResult.ownerNumber) {
-              setOwnerNumber(statusResult.ownerNumber);
-            }
-            await supabase
-              .from("whatsapp_instances")
-              .update({ status: realStatus })
-              .eq("user_id", userId);
-          } catch (err) {
-            console.warn("[EnvioTab] sync status falhou", err);
-          }
-        })();
-      }
-    } catch (error) {
-      // Capturado apenas em casos extremos (Promise.allSettled não rejeita).
-      setLoadError(getAniversariosErrorMessage(error));
-    } finally {
-      setLoading(false);
-    }
-  }, [getAccessToken, user]);
-
+  // Sincroniza com status do banco quando a instância muda.
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    if (instanceRow?.status) setInstanceStatus(instanceRow.status);
+  }, [instanceRow?.status]);
+
+  // Sync de status Evolution em background, com throttle de 60s por usuário.
+  // Não bloqueia a renderização. Ao voltar para a aba dentro da janela de
+  // throttle, NÃO dispara nova chamada — é o que evita o "trava por minutos".
+  const syncEvolutionStatus = useCallback(async () => {
+    if (!userId || !instanceName) return;
+    const last = lastEvolutionSyncByUser.get(userId) ?? 0;
+    if (Date.now() - last < EVOLUTION_SYNC_THROTTLE_MS) return;
+    lastEvolutionSyncByUser.set(userId, Date.now());
+    try {
+      const accessToken = await getAccessToken();
+      const statusResult = await withEvolutionTimeout(
+        getInstanceStatus({ data: { instanceName, accessToken } }),
+        "A verificação de status do WhatsApp",
+      );
+      if (!statusResult.success) return;
+      const body = statusResult.data as
+        | { instance?: { state?: string }; state?: string }
+        | undefined;
+      const state = body?.instance?.state ?? body?.state;
+      const realStatus = state === "open" ? "connected" : "disconnected";
+      setInstanceStatus(realStatus);
+      if (statusResult.ownerNumber) setOwnerNumber(statusResult.ownerNumber);
+      await supabase
+        .from("whatsapp_instances")
+        .update({ status: realStatus })
+        .eq("user_id", userId);
+    } catch (err) {
+      console.warn("[EnvioTab] sync status falhou", err);
+    }
+  }, [userId, instanceName, getAccessToken]);
+
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (!instanceName || syncedRef.current) return;
+    syncedRef.current = true;
+    void syncEvolutionStatus();
+  }, [instanceName, syncEvolutionStatus]);
+
+  const refetchAll = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["aniv:contatos", userId] }),
+      queryClient.invalidateQueries({ queryKey: ["aniv:instance", userId] }),
+      queryClient.invalidateQueries({ queryKey: ["aniv:config", userId] }),
+      queryClient.invalidateQueries({ queryKey: ["aniv:envios", userId] }),
+    ]);
+  }, [queryClient, userId]);
+
+  const loading =
+    contatosQuery.isLoading ||
+    instanceQuery.isLoading ||
+    configQuery.isLoading ||
+    enviosQuery.isLoading;
+
+  const allFailed =
+    contatosQuery.isError &&
+    instanceQuery.isError &&
+    configQuery.isError &&
+    enviosQuery.isError;
+
+  const loadError = allFailed
+    ? getAniversariosErrorMessage(contatosQuery.error)
+    : null;
 
   const handleSend = async () => {
     if (!user) return;
@@ -292,7 +283,6 @@ export function EnvioTab() {
     try {
       const accessToken = await getAccessToken();
 
-      // [1] VALIDAÇÃO DE CONEXÃO REAL — checa /instance/connectionState ANTES de enviar
       const stateCheck = await withEvolutionTimeout(
         getInstanceStatus({ data: { instanceName, accessToken } }),
         "A verificação de status do WhatsApp",
@@ -313,7 +303,6 @@ export function EnvioTab() {
       if (liveOwner) setOwnerNumber(liveOwner);
 
       if (realState !== "open") {
-        // [5] Sessão inválida → tenta reconectar (NÃO recria instância)
         setInstanceStatus("disconnected");
         await supabase
           .from("whatsapp_instances")
@@ -330,7 +319,6 @@ export function EnvioTab() {
 
       setInstanceStatus("connected");
 
-      // [2] BLOQUEIA AUTO-ENVIO — não pode enviar para o próprio número da instância
       if (liveOwner && liveOwner === phone) {
         toast.error(
           `Bloqueado: você está tentando enviar para o próprio número da instância (${liveOwner}). Use outro destinatário.`,
@@ -338,7 +326,6 @@ export function EnvioTab() {
         return;
       }
 
-      // [3] ENVIO via /message/sendText ou /message/sendMedia
       const result = hasImage
         ? await withEvolutionTimeout(
             sendMediaMessage({
@@ -360,7 +347,6 @@ export function EnvioTab() {
             "O envio da mensagem",
           );
 
-      // [6] LOG OBRIGATÓRIO — número, instância, status e resposta completa
       const fullResponseLog = JSON.stringify(
         {
           number: phone,
@@ -378,7 +364,6 @@ export function EnvioTab() {
 
       console.log("[EnvioTab] envio completo:", fullResponseLog);
 
-      // [4] FALHA SILENCIOSA — sucesso sem messageId/key.id é tratado como erro
       let status: "pendente" | "erro";
       let erro: string;
       if (!result.success) {
@@ -414,7 +399,7 @@ export function EnvioTab() {
       } else {
         toast.error(erro.split(" | log:")[0]);
       }
-      await fetchAll();
+      await refetchAll();
     } catch (err) {
       const msg = getAniversariosErrorMessage(err);
       await withRequestTimeout(
@@ -429,7 +414,7 @@ export function EnvioTab() {
         "O registro do erro de envio",
       ).catch(() => undefined);
       toast.error(msg);
-      await fetchAll();
+      await refetchAll();
     } finally {
       setSending(false);
     }
@@ -579,7 +564,6 @@ export function EnvioTab() {
         </CardContent>
       </Card>
 
-      {/* Histórico */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
