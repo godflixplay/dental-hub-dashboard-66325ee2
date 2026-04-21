@@ -11,12 +11,14 @@ const createInstanceSchema = z.object({
 
 const sendMessageSchema = z.object({
   instanceName: z.string().min(1).max(100),
+  accessToken: z.string().min(1),
   phone: z.string().min(10).max(20).regex(/^[0-9]+$/),
   message: z.string().min(1).max(2000),
 });
 
 const sendMediaSchema = z.object({
   instanceName: z.string().min(1).max(100),
+  accessToken: z.string().min(1),
   phone: z.string().min(10).max(20).regex(/^[0-9]+$/),
   caption: z.string().max(2000).optional().default(""),
   mediaUrl: z.string().url().max(2048),
@@ -427,6 +429,8 @@ export const sendTextMessage = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { url, key } = getEvolutionConfig();
     try {
+      await ensureInstanceExists(data.instanceName, data.accessToken);
+
       const res = await fetch(
         `${url}/message/sendText/${data.instanceName}`,
         {
@@ -509,6 +513,8 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { url, key } = getEvolutionConfig();
     try {
+      await ensureInstanceExists(data.instanceName, data.accessToken);
+
       const payload = {
         number: data.phone,
         mediatype: data.mediaType,
