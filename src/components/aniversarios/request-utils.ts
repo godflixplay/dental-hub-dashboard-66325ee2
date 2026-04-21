@@ -1,7 +1,7 @@
 export const ANIVERSARIOS_REQUEST_TIMEOUT_MS = 12000;
 
 export async function withRequestTimeout<T>(
-  promise: Promise<T>,
+  promise: PromiseLike<T>,
   label: string,
   timeoutMs = ANIVERSARIOS_REQUEST_TIMEOUT_MS,
 ) {
@@ -18,7 +18,7 @@ export async function withRequestTimeout<T>(
   });
 
   try {
-    return await Promise.race([promise, timeoutPromise]);
+    return await Promise.race([Promise.resolve(promise), timeoutPromise]);
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
