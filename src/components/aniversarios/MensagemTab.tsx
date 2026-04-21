@@ -142,10 +142,24 @@ export function MensagemTab() {
   const uploadPendingFile = async () => {
     if (!user || !pendingFile) return imagemUrl;
 
-    const ext = pendingFile.name.split(".").pop() || "jpg";
-    const path = `${user.id}/banner-${Date.now()}.${ext}`;
+    const instanceName = instanceQuery.data?.instance_name;
+    if (!instanceName) {
+      throw new Error(
+        "Conecte uma instância do WhatsApp antes de enviar a imagem.",
+      );
+    }
+
+    const ext = (pendingFile.name.split(".").pop() || "png").toLowerCase();
+    // Path: {user_id}/{instance_name}/imagem-{timestamp}.{ext}
+    // Timestamp garante URL nova (evita cache do n8n/Evolution ao trocar imagem).
+    const path = `${user.id}/${instanceName}/imagem-${Date.now()}.${ext}`;
     const { error: uploadError } = await withRequestTimeout(
-      supabase.storage.from("mensagens").upload(path, pendingFile, { upsert: true }),
+      supabase.storage
+        .from("imagens-whatsapp")
+        .upload(path, pendingFile, {
+          upsert: true,
+          contentType: pendingFile.type || undefined,
+        }),
       "O upload da imagem",
     );
 
@@ -154,7 +168,9 @@ export function MensagemTab() {
       throw uploadError;
     }
 
-    const { data } = supabase.storage.from("mensagens").getPublicUrl(path);
+    const { data } = supabase.storage
+      .from("imagens-whatsapp")
+      .getPublicUrl(path);
     return data.publicUrl;
   };
 
