@@ -374,9 +374,50 @@ export function EnvioTab() {
       }
 
       toast.success(`Disparo enviado ao n8n para ${nome}.`);
-      toast.info(
-        "Aguardando processamento do n8n — o registro aparecerá em \"Últimos Envios\" automaticamente.",
-      );
+
+      // Recarrega imediatamente a lista a partir do Supabase
+      // (não dependemos só do Realtime nem do carregamento inicial).
+      // Tenta algumas vezes porque o n8n pode levar alguns segundos
+      // para inserir/atualizar a linha em envios_whatsapp.
+      const reloadEnvios = async () => {
+        const { data, error } = await supabase
+          .from("envios_whatsapp")
+          .select("id, telefone, nome, status, erro, created_at")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(20);
+        if (error) throw error;
+        const rows = (data ?? []) as Array<{
+          id: string;
+          telefone: string;
+          nome: string | null;
+          status: string;
+          erro: string | null;
+          created_at: string;
+        }>;
+        const mapped = rows.map<Envio>((r) => ({
+          id: r.id,
+          telefone: r.telefone,
+          nome: r.nome,
+          status: r.status,
+          erro: r.erro,
+          data_envio: r.created_at,
+        }));
+        queryClient.setQueryData<Envio[]>(["aniv:envios", user.id], mapped);
+        return mapped;
+      };
+
+      try {
+        const previousIds = new Set((envios ?? []).map((e) => e.id));
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const fresh = await reloadEnvios();
+          const hasNew = fresh.some((e) => !previousIds.has(e.id));
+          if (hasNew) break;
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      } catch (reloadErr) {
+        console.warn("[EnvioTab] reload envios falhou", reloadErr);
+      }
     } catch (err) {
       toast.error(getAniversariosErrorMessage(err));
     } finally {
