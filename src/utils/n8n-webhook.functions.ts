@@ -10,7 +10,7 @@ const N8N_TEST_WEBHOOK_URL =
 const triggerSchema = z.object({
   accessToken: z.string().min(1),
   nome: z.string().min(1).max(200),
-  telefone: z.string().min(10).max(20).regex(/^[0-9]+$/),
+  telefone: z.string().min(8).max(20),
   mensagem: z.string().min(1).max(4000),
 });
 
@@ -37,18 +37,55 @@ function getEvolutionConfig() {
 }
 
 /**
+ * Normaliza telefone para o padrão BR esperado pelo n8n/Evolution:
+ *  - remove qualquer caractere não numérico
+ *  - remove zeros à esquerda
+ *  - garante DDI 55 quando o número tem 10 ou 11 dígitos
+ *  - retorna no formato 55DDXXXXXXXXX (12 ou 13 dígitos)
+ */
+function normalizePhoneServer(input: string): string {
+  let digits = String(input ?? "").replace(/\D/g, "").replace(/^0+/, "");
+  if (!digits) throw new Error("Telefone vazio.");
+  if (!(digits.startsWith("55") && (digits.length === 12 || digits.length === 13))) {
+    if (digits.length === 10 || digits.length === 11) {
+      digits = "55" + digits;
+    }
+  }
+  if (digits.length !== 12 && digits.length !== 13 || !digits.startsWith("55")) {
+    throw new Error(
+      `Telefone inválido após normalização: ${digits}. Use formato 55DDXXXXXXXXX.`,
+    );
+  }
+  return digits;
+}
+
+/** Substitui {nome} (e variações com espaço) pelo nome final, sem deixar variáveis cruas. */
+function renderMensagem(template: string, nome: string): string {
+  return String(template ?? "")
+    .replace(/\{\s*nome\s*\}/gi, nome)
+    .trim();
+}
+
+/** Valida se a URL de imagem é pública/usável; retorna null se inválida. */
+function sanitizeImagemUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = String(url).trim();
+  if (!trimmed) return null;
+  if (!/^https?:\/\//i.test(trimmed)) return null;
+  return trimmed;
+}
+
+/**
  * Aciona o webhook do n8n responsável pelo envio de teste.
  *
- * Monta o payload com dados consolidados da instância do usuário
- * (api_url + token vêm do ambiente do servidor — nunca do client),
- * dispara para o n8n e retorna a resposta.
+ * Padroniza TODOS os campos antes de enviar:
+ *  - telefone → 55DDXXXXXXXXX (apenas dígitos)
+ *  - mensagem → texto final, com {nome} já substituído
+ *  - nome_instancia → obrigatório, nunca null
+ *  - imagem_url → URL pública (https) ou ausência explícita
  *
- * O n8n é responsável por:
- *  - executar o envio na Evolution API
- *  - inserir o registro em `envios_whatsapp` (com user_id correto)
- *
- * O frontend NÃO insere nada no banco; ele apenas escuta a tabela via
- * Realtime e exibe o registro quando o n8n o cria.
+ * O n8n é responsável por executar o envio na Evolution API e inserir
+ * o registro em `envios_whatsapp`. O frontend escuta via Realtime.
  */
 export const triggerN8nTestWebhook = createServerFn({ method: "POST" })
   .inputValidator((input: z.infer<typeof triggerSchema>) =>
@@ -77,18 +114,49 @@ export const triggerN8nTestWebhook = createServerFn({ method: "POST" })
       };
     }
 
+    const nomeInstancia = instance.instance_name?.trim();
+    if (!nomeInstancia) {
+      return {
+        success: false as const,
+        error: "Instância sem nome (instance_name) — reconecte o WhatsApp.",
+      };
+    }
+
+    let telefone: string;
+    try {
+      telefone = normalizePhoneServer(data.telefone);
+    } catch (err) {
+      return {
+        success: false as const,
+        error: err instanceof Error ? err.message : "Telefone inválido.",
+      };
+    }
+
+    const nome = data.nome.trim() || "paciente";
+    const mensagem = renderMensagem(data.mensagem, nome);
+    if (!mensagem) {
+      return {
+        success: false as const,
+        error: "Mensagem vazia após renderização.",
+      };
+    }
+
+    const imagemUrl = sanitizeImagemUrl(instance.imagem_url);
+
     const { url: apiUrl, key: token } = getEvolutionConfig();
 
+    // Payload final padronizado — nenhum campo obrigatório vai como null/undefined.
     const payload = {
-      nome: data.nome,
-      telefone: data.telefone,
-      mensagem: data.mensagem,
-      instancia_id: instance.instance_id,
+      nome,
+      telefone,
+      mensagem,
+      nome_instancia: nomeInstancia,
       user_id: user.id,
+      imagem_url: imagemUrl ?? "",
+      // Campos auxiliares mantidos para o n8n usar na chamada à Evolution API
+      instancia_id: instance.instance_id ?? "",
       api_url: apiUrl,
       token,
-      nome_instancia: instance.instance_name,
-      imagem_url: instance.imagem_url ?? null,
     };
 
     try {
