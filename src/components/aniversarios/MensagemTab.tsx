@@ -22,6 +22,10 @@ import {
   getAniversariosErrorMessage,
   withRequestTimeout,
 } from "@/components/aniversarios/request-utils";
+import {
+  assertPersistableImageUrl,
+  uploadInstanceImage,
+} from "@/components/aniversarios/imagem-upload";
 
 interface ConfigMensagem {
   id: string;
@@ -178,37 +182,17 @@ export function MensagemTab() {
       );
     }
 
-    const ext = (pendingFile.name.split(".").pop() || "png")
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, "") || "png";
-    // Path FIXO por instância: {user_id}/{instance_name}/imagem.{ext}
-    // upsert:true sobrescreve o arquivo — garante 1 imagem ativa por instância.
-    const path = `${user.id}/${instanceName}/imagem.${ext}`;
-    const { error: uploadError } = await withRequestTimeout(
-      supabase.storage
-        .from("imagens-whatsapp")
-        .upload(path, pendingFile, {
-          upsert: true,
-          contentType: pendingFile.type || undefined,
-          cacheControl: "0",
-        }),
+    // Lógica pura testada em `imagem-upload.test.ts`:
+    // path estável por instância + upsert + cleanup + cache-buster.
+    return withRequestTimeout(
+      uploadInstanceImage({
+        userId: user.id,
+        instanceName,
+        file: pendingFile,
+        storage: supabase.storage,
+      }),
       "O upload da imagem",
     );
-
-    if (uploadError) {
-      console.error("[MensagemTab] erro no upload da imagem", uploadError);
-      throw uploadError;
-    }
-
-    // Remove arquivos de extensão diferente que possam ter sobrado.
-    await cleanupInstanceImages(instanceName, path);
-
-    const { data } = supabase.storage
-      .from("imagens-whatsapp")
-      .getPublicUrl(path);
-    // Cache-busting query string: força n8n/Evolution a baixar a versão nova.
-    const publicUrl = `${data.publicUrl}?v=${Date.now()}`;
-    return publicUrl;
   };
 
   const handleRemoveImage = async () => {
@@ -260,7 +244,10 @@ export function MensagemTab() {
           return;
         }
 
-        if (!nextImagemUrl) {
+        try {
+          // Invariante: upload pendente NUNCA pode resultar em null/empty.
+          assertPersistableImageUrl(nextImagemUrl, true);
+        } catch {
           toast.error("Não foi possível obter a URL pública da imagem.");
           setSaving(false);
           return;
