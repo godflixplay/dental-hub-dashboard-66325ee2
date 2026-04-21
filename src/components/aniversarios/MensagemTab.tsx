@@ -17,6 +17,10 @@ import {
   buildMensagemPreview,
   DEFAULT_MENSAGEM_ANIVERSARIO,
 } from "@/components/aniversarios/mensagem-config";
+import {
+  getAniversariosErrorMessage,
+  withRequestTimeout,
+} from "@/components/aniversarios/request-utils";
 
 interface ConfigMensagem {
   id: string;
@@ -43,11 +47,14 @@ export function MensagemTab() {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("config_mensagem")
-        .select("id, mensagem, imagem_url")
-        .eq("user_id", user.id)
-        .maybeSingle();
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from("config_mensagem")
+          .select("id, mensagem, imagem_url")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        "O carregamento da configuração da mensagem",
+      );
 
       if (error) {
         throw error;
@@ -68,7 +75,7 @@ export function MensagemTab() {
       setConfig(null);
       setMensagem(DEFAULT_MENSAGEM_ANIVERSARIO);
       setImagemUrl(null);
-      toast.error("Não foi possível carregar a configuração da mensagem");
+      toast.error(getAniversariosErrorMessage(error));
     } finally {
       setPendingFile(null);
       setLocalPreviewUrl((current) => {
@@ -125,9 +132,10 @@ export function MensagemTab() {
 
     const ext = pendingFile.name.split(".").pop() || "jpg";
     const path = `${user.id}/banner-${Date.now()}.${ext}`;
-    const { error: uploadError } = await supabase.storage
-      .from("mensagens")
-      .upload(path, pendingFile, { upsert: true });
+    const { error: uploadError } = await withRequestTimeout(
+      supabase.storage.from("mensagens").upload(path, pendingFile, { upsert: true }),
+      "O upload da imagem",
+    );
 
     if (uploadError) {
       console.error("[MensagemTab] erro no upload da imagem", uploadError);
@@ -175,11 +183,14 @@ export function MensagemTab() {
         imagem_url: nextImagemUrl,
         updated_at: new Date().toISOString(),
       };
-      const { data, error } = await supabase
-        .from("config_mensagem")
-        .upsert(payload, { onConflict: "user_id" })
-        .select("id, mensagem, imagem_url")
-        .single();
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from("config_mensagem")
+          .upsert(payload, { onConflict: "user_id" })
+          .select("id, mensagem, imagem_url")
+          .single(),
+        "O salvamento da configuração",
+      );
       if (error) throw error;
 
       const savedConfig = data as ConfigMensagem;
@@ -196,7 +207,7 @@ export function MensagemTab() {
       toast.success("Mensagem salva!");
     } catch (err) {
       console.error("[MensagemTab] erro ao salvar configuração", err);
-      toast.error(err instanceof Error ? err.message : "Erro ao salvar");
+      toast.error(getAniversariosErrorMessage(err));
     } finally {
       setSaving(false);
     }

@@ -34,6 +34,11 @@ import {
   buildMensagemPreview,
   isMensagemConfigurada,
 } from "@/components/aniversarios/mensagem-config";
+import {
+  getAniversariosErrorMessage,
+  withRequestTimeout,
+} from "@/components/aniversarios/request-utils";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface Contato {
   id: string;
@@ -67,6 +72,7 @@ export function EnvioTab() {
   const [customNome, setCustomNome] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     if (!user) {
@@ -75,26 +81,30 @@ export function EnvioTab() {
     }
 
     setLoading(true);
+    setLoadError(null);
     try {
-      const [contatosRes, instanceRes, configRes, enviosRes] = await Promise.all([
-        supabase.from("contatos").select("id, nome, telefone").order("nome"),
-        supabase
-          .from("whatsapp_instances")
-          .select("instance_name, status")
-          .eq("user_id", user.id)
-          .maybeSingle(),
-        supabase
-          .from("config_mensagem")
-          .select("mensagem, imagem_url")
-          .eq("user_id", user.id)
-          .maybeSingle(),
-        supabase
-          .from("envios")
-          .select("id, telefone, nome, status, erro, data_envio")
-          .eq("user_id", user.id)
-          .order("data_envio", { ascending: false })
-          .limit(10),
-      ]);
+      const [contatosRes, instanceRes, configRes, enviosRes] = await withRequestTimeout(
+        Promise.all([
+          supabase.from("contatos").select("id, nome, telefone").order("nome"),
+          supabase
+            .from("whatsapp_instances")
+            .select("instance_name, status")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          supabase
+            .from("config_mensagem")
+            .select("mensagem, imagem_url")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          supabase
+            .from("envios")
+            .select("id, telefone, nome, status, erro, data_envio")
+            .eq("user_id", user.id)
+            .order("data_envio", { ascending: false })
+            .limit(10),
+        ]),
+        "O carregamento da aba de envio",
+      );
 
       if (contatosRes.error) {
         console.error("[EnvioTab] erro ao carregar contatos", contatosRes.error);
@@ -109,14 +119,34 @@ export function EnvioTab() {
         console.error("[EnvioTab] erro ao carregar envios", enviosRes.error);
       }
 
+      const firstError =
+        contatosRes.error ??
+        instanceRes.error ??
+        configRes.error ??
+        enviosRes.error;
+
+      if (firstError) {
+        setLoadError(getAniversariosErrorMessage(firstError));
+      }
+
       setContatos((contatosRes.data as Contato[]) ?? []);
       if (instanceRes.data) {
         const i = instanceRes.data as { instance_name: string; status: string };
         setInstanceName(i.instance_name);
         setInstanceStatus(i.status);
+      } else {
+        setInstanceName(null);
+        setInstanceStatus("disconnected");
       }
       setConfig((configRes.data as ConfigMensagem) ?? null);
       setEnvios((enviosRes.data as Envio[]) ?? []);
+    } catch (error) {
+      setLoadError(getAniversariosErrorMessage(error));
+      setContatos([]);
+      setConfig(null);
+      setEnvios([]);
+      setInstanceName(null);
+      setInstanceStatus("disconnected");
     } finally {
       setLoading(false);
     }
@@ -156,40 +186,54 @@ export function EnvioTab() {
     const finalMessage = buildMensagemPreview(mensagemTemplate, nome);
 
     try {
-      const result = await sendTextMessage({
-        data: { instanceName, phone, message: finalMessage },
-      });
+      const result = await withRequestTimeout(
+        sendTextMessage({
+          data: { instanceName, phone, message: finalMessage },
+        }),
+        "O envio da mensagem",
+      );
 
-      const status = result.success ? "enviado" : "erro";
-      const erro = result.success ? null : (result.error ?? "Erro desconhecido");
+      const status = result.success ? "pendente" : "erro";
+      const erro = result.success
+        ? result.providerStatus
+          ? `Evolution aceitou a mensagem com status ${result.providerStatus}. A entrega final no WhatsApp ainda não foi confirmada.`
+          : "Evolution aceitou a mensagem, mas a entrega final no WhatsApp ainda não foi confirmada."
+        : (result.error ?? "Erro desconhecido");
 
-      await supabase.from("envios").insert({
-        user_id: user.id,
-        contato_id: contato?.id ?? null,
-        telefone: phone,
-        nome,
-        status,
-        erro,
-      });
+      await withRequestTimeout(
+        supabase.from("envios").insert({
+          user_id: user.id,
+          contato_id: contato?.id ?? null,
+          telefone: phone,
+          nome,
+          status,
+          erro,
+        }),
+        "O registro do histórico de envio",
+      );
 
       if (result.success) {
-        toast.success(`Mensagem enviada para ${nome}!`);
+        toast.success(`Mensagem aceita pela Evolution para ${nome}.`);
+        toast.info("Ainda falta confirmação real de entrega no WhatsApp.");
       } else {
         toast.error(erro ?? "Erro ao enviar");
       }
-      fetchAll();
+      await fetchAll();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Erro ao enviar";
-      await supabase.from("envios").insert({
-        user_id: user.id,
-        contato_id: contato?.id ?? null,
-        telefone: phone,
-        nome,
-        status: "erro",
-        erro: msg,
-      });
+      const msg = getAniversariosErrorMessage(err);
+      await withRequestTimeout(
+        supabase.from("envios").insert({
+          user_id: user.id,
+          contato_id: contato?.id ?? null,
+          telefone: phone,
+          nome,
+          status: "erro",
+          erro: msg,
+        }),
+        "O registro do erro de envio",
+      ).catch(() => undefined);
       toast.error(msg);
-      fetchAll();
+      await fetchAll();
     } finally {
       setSending(false);
     }
@@ -208,11 +252,19 @@ export function EnvioTab() {
 
   return (
     <div className="space-y-4">
+      {loadError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Falha ao carregar a aba</AlertTitle>
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg">Envio de Teste</CardTitle>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Badge
                 variant={
                   instanceStatus === "connected" ? "default" : "destructive"
@@ -278,7 +330,7 @@ export function EnvioTab() {
             </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             <div>
               <Label>Ou digite um número</Label>
               <Input
@@ -360,7 +412,11 @@ export function EnvioTab() {
                     <TableCell>
                       <Badge
                         variant={
-                          e.status === "enviado" ? "default" : "destructive"
+                          e.status === "enviado"
+                            ? "default"
+                            : e.status === "pendente"
+                              ? "secondary"
+                              : "destructive"
                         }
                       >
                         {e.status}

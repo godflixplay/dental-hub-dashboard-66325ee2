@@ -355,14 +355,32 @@ export const sendTextMessage = createServerFn({ method: "POST" })
           }),
         },
       );
-      const body = await res.json();
+      const rawBody = await res.text();
+      const body = parseJsonSafely(rawBody) ?? rawBody;
       if (!res.ok) {
         return {
           success: false,
-          error: `Error [${res.status}]: ${JSON.stringify(body)}`,
+          error: `Error [${res.status}]: ${typeof body === "string" ? body : JSON.stringify(body)}`,
         };
       }
-      return { success: true, data: body };
+
+      const providerStatus =
+        typeof body === "object" && body !== null && "status" in body
+          ? String((body as { status?: unknown }).status ?? "")
+          : "";
+
+      const messageId =
+        typeof body === "object" && body !== null && "key" in body
+          ? ((body as { key?: { id?: string } }).key?.id ?? null)
+          : null;
+
+      return {
+        success: true,
+        data: body,
+        accepted: true,
+        providerStatus,
+        messageId,
+      };
     } catch (error) {
       return {
         success: false,
