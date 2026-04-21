@@ -344,6 +344,7 @@ export function EnvioTab() {
             sendMediaMessage({
               data: {
                 instanceName,
+                accessToken,
                 phone,
                 caption: finalMessage,
                 mediaUrl: config!.imagem_url!,
@@ -354,7 +355,7 @@ export function EnvioTab() {
           )
         : await withEvolutionTimeout(
             sendTextMessage({
-              data: { instanceName, phone, message: finalMessage },
+              data: { instanceName, accessToken, phone, message: finalMessage },
             }),
             "O envio da mensagem",
           );
