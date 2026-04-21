@@ -1,110 +1,84 @@
 
 
-## Análise do estado atual
+## Plano: Fluxo de conexão do WhatsApp inteligente e sem loops
 
-Já existe parte da infraestrutura implementada:
-- ✅ Tabela `contatos` (com `user_id`, `nome`, `telefone`, `data_nascimento`)
-- ✅ Tabela `whatsapp_instances` (com `user_id`, `instance_name`, `status`)
-- ✅ Server functions Evolution API (`createInstance`, `getQrCode`, `getInstanceStatus`, `sendTextMessage`)
-- ✅ Aba **Contatos** com upload CSV/XLSX
-- ✅ Aba **WhatsApp** com criação de instância e QR Code
-- ✅ Aba **Envio** (teste manual)
-- ✅ RLS isolando dados por `user_id`
+### Objetivo
+Tornar a aba WhatsApp determinística: ao abrir, decidir automaticamente entre "já conectado", "precisa de QR" ou "precisa criar instância" — sem nunca recriar instância existente e sem loading infinito.
 
-O que falta para atender o pedido:
-1. Tabela `config_mensagem` (mensagem + imagem por usuário)
-2. Tabela `envios` (log de envios)
-3. Bucket de Storage para as imagens
-4. Nova aba **Mensagem** com editor de texto + upload de imagem + preview
-5. Atualizar aba **Envio** para usar a mensagem/imagem salva em `config_mensagem` e gravar log em `envios`
-
-Observação importante: a estrutura atual usa nomes em inglês (`user_id`, `data_nascimento`, `whatsapp_instances`). Vou **manter esses nomes** para não quebrar o que já funciona — apenas adicionando as duas novas tabelas (`config_mensagem` e `envios`) seguindo o mesmo padrão (`user_id`).
-
-## Plano de implementação
-
-### Etapa 1 — Banco de dados (migration)
-
-Criar via migration:
-
-**Tabela `config_mensagem`**
-- `id uuid pk`
-- `user_id uuid` (unique — uma config por usuário)
-- `mensagem text` (suporta `{nome}`)
-- `imagem_url text` (URL pública do Storage)
-- `updated_at timestamptz`
-- RLS: usuário só vê/edita a própria; admin vê todas
-
-**Tabela `envios`**
-- `id uuid pk`
-- `user_id uuid`
-- `contato_id uuid` (opcional, FK para `contatos`)
-- `telefone text`
-- `nome text`
-- `status text` (`enviado` | `erro` | `pendente`)
-- `erro text` (mensagem de erro quando aplicável)
-- `data_envio timestamptz default now()`
-- RLS: usuário só vê os próprios envios; admin vê todos
-
-**Storage bucket `mensagens`** (público para leitura) com policies para upload/update/delete restritos ao próprio usuário (path `{user_id}/...`).
-
-### Etapa 2 — Aba "Mensagem" (nova)
-
-Criar `src/components/aniversarios/MensagemTab.tsx`:
-- Textarea para mensagem com hint da variável `{nome}`
-- Upload de imagem (input file → Supabase Storage bucket `mensagens` em `{user_id}/banner.{ext}`)
-- Preview lado a lado: card simulando WhatsApp mostrando imagem + texto com `{nome}` substituído por "João" como exemplo
-- Botão **Salvar** → upsert em `config_mensagem`
-- Carrega config existente ao abrir
-
-Adicionar a aba em `src/routes/_authenticated.dashboard.aniversarios.tsx` (ícone `MessageSquare`).
-
-### Etapa 3 — Importação de contatos
-
-Já implementado e funcional. **Sem mudanças** — apenas confirmar que aceita as colunas `Nome`, `Telefone`, `Data Nascimento` (já aceita variantes).
-
-### Etapa 4 — Conexão WhatsApp
-
-Já implementado. **Sem mudanças**.
-
-### Etapa 5 — Atualizar aba "Envio"
-
-Refatorar `EnvioTab.tsx`:
-- Remover textarea manual de mensagem
-- Carregar mensagem/imagem da `config_mensagem` do usuário
-- Mostrar aviso se config não existir ("Configure sua mensagem na aba Mensagem")
-- Ao enviar: substituir `{nome}`, chamar `sendTextMessage`, e gravar registro em `envios` (status `enviado` ou `erro`)
-- (Opcional nesta etapa) Mostrar últimos envios em uma tabela abaixo
-
-### Etapa 6 — Painel admin
-
-A tabela `envios` aparecerá automaticamente para o admin via RLS quando expandirmos os relatórios. Nesta etapa apenas garantir as policies — UI admin de envios fica para depois.
-
-## Estrutura final de arquivos
+### Comportamento alvo
 
 ```text
-src/
-├── routes/_authenticated.dashboard.aniversarios.tsx   (+ aba Mensagem)
-├── components/aniversarios/
-│   ├── ContatosTab.tsx       (sem mudança)
-│   ├── WhatsAppTab.tsx       (sem mudança)
-│   ├── MensagemTab.tsx       (NOVO)
-│   └── EnvioTab.tsx          (refatorado para usar config_mensagem + log envios)
-└── integrations/supabase/    (tipos regenerados após migration)
+Abrir aba WhatsApp
+        │
+        ▼
+[1] SELECT whatsapp_instances WHERE user_id = me
+        │
+   ┌────┴─────┐
+   │          │
+ não existe   existe
+   │          │
+   │          ▼
+   │   [2] getInstanceStatus(instance_name)
+   │          │
+   │     ┌────┴─────────────────┐
+   │     │                      │
+   │   state=open         state≠open
+   │     │                      │
+   │     ▼                      ▼
+   │  marca "connected"    [3] getQrCode(instance_name)
+   │  no banco                  │ exibe QR + inicia polling
+   │  libera Envio              │ a cada 5s checa status
+   │                            │ → quando open: marca conectado
+   ▼
+[botão "Conectar WhatsApp"] → createInstance → fluxo segue para [2]
 ```
 
-## Fluxo de teste após implementação
+Regra de ouro: **createInstance só roda quando NÃO existe linha em `whatsapp_instances` para o usuário**. Se existir, reutiliza o `instance_name` salvo.
 
-1. Cadastrar/logar como cliente
-2. Aba **WhatsApp** → criar instância → escanear QR
-3. Aba **Mensagem** → escrever texto com `{nome}` + upload de imagem → salvar
-4. Aba **Contatos** → importar planilha
-5. Aba **Envio** → escolher contato → enviar (usa mensagem/imagem salva) → conferir registro em `envios`
+### Mudanças por arquivo
 
-## Pontos técnicos
+**`src/components/aniversarios/WhatsAppTab.tsx`** (refatoração principal)
 
-- Migration adiciona `config_mensagem`, `envios` e bucket `mensagens` com RLS completa
-- Storage path padronizado em `{user_id}/...` para policies funcionarem
-- `EnvioTab` passa a inserir em `envios` após cada tentativa (sucesso ou erro)
-- Envio com imagem usaria endpoint `sendMedia` da Evolution — nesta etapa, mantemos `sendText` e a imagem fica apenas no preview/config (envio com mídia entra na próxima iteração junto com a automação n8n, conforme você indicou)
-- Isolamento total garantido via `user_id` + RLS em todas as tabelas
+1. Substituir `fetchInstance` por `bootstrapConnection`:
+   - Busca linha em `whatsapp_instances` (com `withRequestTimeout`).
+   - Se existe: chama `getInstanceStatus`. Se `state === "open"` → atualiza banco para `connected`, marca steps `create/save/qr/scan/connected` como `done`, libera UI conectada. Se não → chama `getQrCode` direto (pula `createInstance`) e exibe QR.
+   - Se não existe: apenas finaliza loading e mostra botão "Conectar WhatsApp".
+   - `finally` sempre limpa `loading` e `connecting` (garante zero loop).
+
+2. `handleConnect` passa a ser usado **só para criar instância nova** (quando `instance` é null). Após criar, delega para `bootstrapConnection` para seguir o mesmo fluxo de status/QR — elimina caminho duplicado.
+
+3. Adicionar **polling de status** enquanto QR estiver visível:
+   - `useEffect` dispara `setInterval` de 5s chamando `getInstanceStatus` quando `qrCode && instance.status !== "connected"`.
+   - Quando detectar `open`: limpa intervalo, atualiza banco, esconde QR, marca steps `scan/connected` como `done`, mostra toast de sucesso.
+   - Cleanup do intervalo no unmount e quando `qrCode` virar null.
+   - Limite de segurança: para o polling após 2 minutos para não rodar indefinidamente, mostrando aviso "Tempo esgotado, clique em Atualizar Status".
+
+4. Estados finais sempre claros:
+   - `loading` (spinner inicial) → vira `false` em todo caminho do `bootstrapConnection`.
+   - `connecting` (botão de criar) → `finally` garante reset.
+   - `qrError` mostra card de erro com botão "Tentar novamente".
+   - Steps refletem o estado real (sem ficar "active" preso).
+
+5. Botão "Já escaneei" continua disponível como fallback manual mesmo com polling automático.
+
+### O que NÃO muda
+
+- `src/utils/evolution.functions.ts`: `createInstance`, `getQrCode`, `getInstanceStatus` permanecem como estão. A correção é puramente de orquestração no frontend.
+- Tabelas Supabase, RLS e migrações: nada novo.
+- Demais abas (Mensagem, Contatos, Envio): intocadas.
+
+### Detalhes técnicos
+
+- Usar `withRequestTimeout` em todas as chamadas dentro do `bootstrapConnection` para evitar promessas penduradas (timeout 12s já configurado).
+- Polling com `useRef<NodeJS.Timeout | null>` para o `setInterval` + `useRef<number>` para contar tentativas.
+- Quando `getInstanceStatus` retornar `success: false` durante polling, **não** parar o polling imediatamente (pode ser blip de rede); só parar após 3 falhas consecutivas e mostrar `qrError`.
+- Atualização do banco usa o client `supabase` (RLS garante isolamento por `user_id`).
+- Nenhum `await` fica fora de `try/catch/finally` que controle `loading`/`connecting`.
+
+### Resultado esperado
+
+- Abrir aba já conectada → spinner curto → tela "WhatsApp conectado" sem chamar `createInstance` nem `getQrCode`.
+- Abrir aba com instância criada mas desconectada → spinner curto → QR aparece automaticamente + polling detecta a leitura.
+- Abrir aba sem instância → spinner curto → botão "Conectar WhatsApp" habilitado.
+- Em qualquer erro (timeout, API fora) → card vermelho com mensagem e botão "Tentar novamente". Nunca spinner infinito.
 
