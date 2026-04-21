@@ -172,9 +172,17 @@ export function ContatosTab() {
 
   const handleSave = async () => {
     if (!user || !form.nome || !form.telefone) return;
+    const norm = normalizePhoneBR(form.telefone);
+    if (!norm.valid) {
+      toast.error(
+        norm.reason ??
+          "Número inválido. Use formato 55DDXXXXXXXXX (ex: 5521981089100).",
+      );
+      return;
+    }
     const payload = {
       nome: form.nome.trim(),
-      telefone: form.telefone.replace(/\D/g, ""),
+      telefone: norm.phone,
       data_nascimento: form.data_nascimento || null,
       user_id: user.id,
     };
