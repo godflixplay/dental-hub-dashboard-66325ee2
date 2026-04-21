@@ -139,6 +139,35 @@ export function MensagemTab() {
     if (fileRef.current) fileRef.current.value = "";
   };
 
+  // Lista os arquivos do folder {user_id}/{instance_name}/ e apaga todos
+  // que começam com "imagem." — garante que sobra apenas 1 imagem ativa
+  // mesmo que a extensão mude (ex.: antes .png, agora .webp).
+  const cleanupInstanceImages = async (
+    instanceName: string,
+    exceptPath?: string,
+  ) => {
+    if (!user) return;
+    const folder = `${user.id}/${instanceName}`;
+    const { data: listData, error: listError } = await supabase.storage
+      .from("imagens-whatsapp")
+      .list(folder);
+    if (listError || !listData) return;
+    const toRemove = listData
+      .filter((f) => f.name.startsWith("imagem."))
+      .map((f) => `${folder}/${f.name}`)
+      .filter((p) => p !== exceptPath);
+    if (toRemove.length === 0) return;
+    const { error: removeError } = await supabase.storage
+      .from("imagens-whatsapp")
+      .remove(toRemove);
+    if (removeError) {
+      console.warn(
+        "[MensagemTab] falha ao limpar imagens antigas",
+        removeError,
+      );
+    }
+  };
+
   const uploadPendingFile = async () => {
     if (!user || !pendingFile) return imagemUrl;
 
@@ -149,16 +178,19 @@ export function MensagemTab() {
       );
     }
 
-    const ext = (pendingFile.name.split(".").pop() || "png").toLowerCase();
-    // Path: {user_id}/{instance_name}/imagem-{timestamp}.{ext}
-    // Timestamp garante URL nova (evita cache do n8n/Evolution ao trocar imagem).
-    const path = `${user.id}/${instanceName}/imagem-${Date.now()}.${ext}`;
+    const ext = (pendingFile.name.split(".").pop() || "png")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "") || "png";
+    // Path FIXO por instância: {user_id}/{instance_name}/imagem.{ext}
+    // upsert:true sobrescreve o arquivo — garante 1 imagem ativa por instância.
+    const path = `${user.id}/${instanceName}/imagem.${ext}`;
     const { error: uploadError } = await withRequestTimeout(
       supabase.storage
         .from("imagens-whatsapp")
         .upload(path, pendingFile, {
           upsert: true,
           contentType: pendingFile.type || undefined,
+          cacheControl: "0",
         }),
       "O upload da imagem",
     );
@@ -168,19 +200,35 @@ export function MensagemTab() {
       throw uploadError;
     }
 
+    // Remove arquivos de extensão diferente que possam ter sobrado.
+    await cleanupInstanceImages(instanceName, path);
+
     const { data } = supabase.storage
       .from("imagens-whatsapp")
       .getPublicUrl(path);
-    return data.publicUrl;
+    // Cache-busting query string: força n8n/Evolution a baixar a versão nova.
+    const publicUrl = `${data.publicUrl}?v=${Date.now()}`;
+    return publicUrl;
   };
 
-  const handleRemoveImage = () => {
+  const handleRemoveImage = async () => {
     setLocalPreviewUrl((current) => {
       if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
       return null;
     });
     setPendingFile(null);
     setImagemUrl(null);
+
+    // Apaga do Storage de verdade — senão a "imagem antiga" persiste
+    // no bucket e o n8n pode continuar usando URL velha.
+    const instanceName = instanceQuery.data?.instance_name;
+    if (user && instanceName) {
+      try {
+        await cleanupInstanceImages(instanceName);
+      } catch (err) {
+        console.warn("[MensagemTab] falha ao remover imagem do storage", err);
+      }
+    }
   };
 
   const handleSave = async () => {
