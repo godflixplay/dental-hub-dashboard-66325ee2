@@ -15,6 +15,16 @@ const sendMessageSchema = z.object({
   message: z.string().min(1).max(2000),
 });
 
+const sendMediaSchema = z.object({
+  instanceName: z.string().min(1).max(100),
+  phone: z.string().min(10).max(20).regex(/^[0-9]+$/),
+  caption: z.string().max(2000).optional().default(""),
+  mediaUrl: z.string().url().max(2048),
+  mediaType: z.enum(["image", "video", "document", "audio"]).default("image"),
+  mimetype: z.string().min(1).max(100).optional(),
+  fileName: z.string().min(1).max(200).optional(),
+});
+
 const instanceNameSchema = z.object({
   instanceName: z.string().min(1).max(100),
   accessToken: z.string().min(1),
@@ -374,12 +384,118 @@ export const sendTextMessage = createServerFn({ method: "POST" })
           ? ((body as { key?: { id?: string } }).key?.id ?? null)
           : null;
 
+      const remoteJid =
+        typeof body === "object" && body !== null && "key" in body
+          ? ((body as { key?: { remoteJid?: string } }).key?.remoteJid ?? null)
+          : null;
+
       return {
         success: true,
         data: body,
         accepted: true,
         providerStatus,
         messageId,
+        remoteJid,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  });
+
+function inferMimetype(mediaUrl: string, fallback?: string) {
+  if (fallback) return fallback;
+  const lower = mediaUrl.toLowerCase().split("?")[0];
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  return "image/jpeg";
+}
+
+function inferFileName(mediaUrl: string, fallback?: string) {
+  if (fallback) return fallback;
+  try {
+    const u = new URL(mediaUrl);
+    const last = u.pathname.split("/").pop();
+    return last || "imagem.jpg";
+  } catch {
+    return "imagem.jpg";
+  }
+}
+
+export const sendMediaMessage = createServerFn({ method: "POST" })
+  .inputValidator((input: z.infer<typeof sendMediaSchema>) =>
+    sendMediaSchema.parse(input),
+  )
+  .handler(async ({ data }) => {
+    const { url, key } = getEvolutionConfig();
+    try {
+      const payload = {
+        number: data.phone,
+        mediatype: data.mediaType,
+        mimetype: inferMimetype(data.mediaUrl, data.mimetype),
+        caption: data.caption ?? "",
+        media: data.mediaUrl,
+        fileName: inferFileName(data.mediaUrl, data.fileName),
+      };
+
+      console.log("[Evolution] sendMedia →", {
+        url: `${url}/message/sendMedia/${data.instanceName}`,
+        number: data.phone,
+        mediaUrl: data.mediaUrl,
+      });
+
+      const res = await fetch(
+        `${url}/message/sendMedia/${data.instanceName}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: key,
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+      const rawBody = await res.text();
+      const body = parseJsonSafely(rawBody) ?? rawBody;
+      console.log(
+        "[Evolution] sendMedia ←",
+        res.status,
+        typeof body === "string" ? body.slice(0, 400) : JSON.stringify(body).slice(0, 400),
+      );
+
+      if (!res.ok) {
+        return {
+          success: false,
+          error: `Error [${res.status}]: ${typeof body === "string" ? body : JSON.stringify(body)}`,
+        };
+      }
+
+      const providerStatus =
+        typeof body === "object" && body !== null && "status" in body
+          ? String((body as { status?: unknown }).status ?? "")
+          : "";
+
+      const messageId =
+        typeof body === "object" && body !== null && "key" in body
+          ? ((body as { key?: { id?: string } }).key?.id ?? null)
+          : null;
+
+      const remoteJid =
+        typeof body === "object" && body !== null && "key" in body
+          ? ((body as { key?: { remoteJid?: string } }).key?.remoteJid ?? null)
+          : null;
+
+      return {
+        success: true,
+        data: body,
+        accepted: true,
+        providerStatus,
+        messageId,
+        remoteJid,
       };
     } catch (error) {
       return {

@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { sendTextMessage, getInstanceStatus } from "@/utils/evolution.functions";
+import {
+  sendTextMessage,
+  sendMediaMessage,
+  getInstanceStatus,
+} from "@/utils/evolution.functions";
 import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
 import { Send, MessageSquare, AlertCircle, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -84,68 +88,109 @@ export function EnvioTab() {
 
     setLoading(true);
     setLoadError(null);
+
+    // Etapa 1: carrega tudo do Supabase em paralelo, com Promise.allSettled
+    // para que uma consulta lenta/falha NÃO derrube as outras nem trave a aba.
     try {
-      const [contatosRes, instanceRes, configRes, enviosRes] = await withRequestTimeout(
-        Promise.all([
-          supabase.from("contatos").select("id, nome, telefone").order("nome"),
-          supabase
-            .from("whatsapp_instances")
-            .select("instance_name, status")
-            .eq("user_id", user.id)
-            .maybeSingle(),
-          supabase
-            .from("config_mensagem")
-            .select("mensagem, imagem_url")
-            .eq("user_id", user.id)
-            .maybeSingle(),
-          supabase
-            .from("envios")
-            .select("id, telefone, nome, status, erro, data_envio")
-            .eq("user_id", user.id)
-            .order("data_envio", { ascending: false })
-            .limit(10),
-        ]),
-        "O carregamento da aba de envio",
-      );
+      const [contatosRes, instanceRes, configRes, enviosRes] =
+        await Promise.allSettled([
+          withRequestTimeout(
+            supabase.from("contatos").select("id, nome, telefone").order("nome"),
+            "O carregamento dos contatos",
+          ),
+          withRequestTimeout(
+            supabase
+              .from("whatsapp_instances")
+              .select("instance_name, status")
+              .eq("user_id", user.id)
+              .maybeSingle(),
+            "O carregamento da instância",
+          ),
+          withRequestTimeout(
+            supabase
+              .from("config_mensagem")
+              .select("mensagem, imagem_url")
+              .eq("user_id", user.id)
+              .maybeSingle(),
+            "O carregamento da configuração",
+          ),
+          withRequestTimeout(
+            supabase
+              .from("envios")
+              .select("id, telefone, nome, status, erro, data_envio")
+              .eq("user_id", user.id)
+              .order("data_envio", { ascending: false })
+              .limit(10),
+            "O carregamento do histórico",
+          ),
+        ]);
 
-      if (contatosRes.error) {
-        console.error("[EnvioTab] erro ao carregar contatos", contatosRes.error);
-      }
-      if (instanceRes.error) {
-        console.error("[EnvioTab] erro ao carregar instância", instanceRes.error);
-      }
-      if (configRes.error) {
-        console.error("[EnvioTab] erro ao carregar config_mensagem", configRes.error);
-      }
-      if (enviosRes.error) {
-        console.error("[EnvioTab] erro ao carregar envios", enviosRes.error);
+      const errors: unknown[] = [];
+
+      if (contatosRes.status === "fulfilled" && !contatosRes.value.error) {
+        setContatos((contatosRes.value.data as Contato[]) ?? []);
+      } else {
+        setContatos([]);
+        errors.push(
+          contatosRes.status === "rejected"
+            ? contatosRes.reason
+            : contatosRes.value.error,
+        );
       }
 
-      const firstError =
-        contatosRes.error ??
-        instanceRes.error ??
-        configRes.error ??
-        enviosRes.error;
-
-      if (firstError) {
-        setLoadError(getAniversariosErrorMessage(firstError));
-      }
-
-      setContatos((contatosRes.data as Contato[]) ?? []);
       let resolvedInstanceName: string | null = null;
       let resolvedStatus = "disconnected";
-      if (instanceRes.data) {
-        const i = instanceRes.data as { instance_name: string; status: string };
-        resolvedInstanceName = i.instance_name;
-        resolvedStatus = i.status;
+      if (instanceRes.status === "fulfilled" && !instanceRes.value.error) {
+        const i = instanceRes.value.data as
+          | { instance_name: string; status: string }
+          | null;
+        if (i) {
+          resolvedInstanceName = i.instance_name;
+          resolvedStatus = i.status;
+        }
+      } else {
+        errors.push(
+          instanceRes.status === "rejected"
+            ? instanceRes.reason
+            : instanceRes.value.error,
+        );
       }
       setInstanceName(resolvedInstanceName);
       setInstanceStatus(resolvedStatus);
-      setConfig((configRes.data as ConfigMensagem) ?? null);
-      setEnvios((enviosRes.data as Envio[]) ?? []);
 
-      // Sincroniza status real da Evolution (fire-and-forget, não bloqueia o render)
-      if (resolvedInstanceName && user) {
+      if (configRes.status === "fulfilled" && !configRes.value.error) {
+        setConfig((configRes.value.data as ConfigMensagem) ?? null);
+      } else {
+        setConfig(null);
+        errors.push(
+          configRes.status === "rejected"
+            ? configRes.reason
+            : configRes.value.error,
+        );
+      }
+
+      if (enviosRes.status === "fulfilled" && !enviosRes.value.error) {
+        setEnvios((enviosRes.value.data as Envio[]) ?? []);
+      } else {
+        setEnvios([]);
+        errors.push(
+          enviosRes.status === "rejected"
+            ? enviosRes.reason
+            : enviosRes.value.error,
+        );
+      }
+
+      // Só mostra alerta de carregamento se TUDO falhou; falhas parciais
+      // ficam silenciosas (logadas) e a tela continua utilizável.
+      if (errors.length === 4) {
+        setLoadError(getAniversariosErrorMessage(errors[0]));
+      } else if (errors.length > 0) {
+        console.warn("[EnvioTab] erros parciais ao carregar", errors);
+      }
+
+      // Etapa 2: sincroniza status real da Evolution em background.
+      // NÃO bloqueia render. Erro/timeout aqui não afeta a aba.
+      if (resolvedInstanceName) {
         const instanceName = resolvedInstanceName;
         const userId = user.id;
         void (async () => {
@@ -171,12 +216,8 @@ export function EnvioTab() {
         })();
       }
     } catch (error) {
+      // Capturado apenas em casos extremos (Promise.allSettled não rejeita).
       setLoadError(getAniversariosErrorMessage(error));
-      setContatos([]);
-      setConfig(null);
-      setEnvios([]);
-      setInstanceName(null);
-      setInstanceStatus("disconnected");
     } finally {
       setLoading(false);
     }
@@ -224,20 +265,35 @@ export function EnvioTab() {
 
     setSending(true);
     const finalMessage = buildMensagemPreview(mensagemTemplate, nome);
+    const hasImage = Boolean(config?.imagem_url);
+    const tipoEnvio = hasImage ? "imagem + legenda" : "texto";
 
     try {
-      const result = await withEvolutionTimeout(
-        sendTextMessage({
-          data: { instanceName, phone, message: finalMessage },
-        }),
-        "O envio da mensagem",
-      );
+      const result = hasImage
+        ? await withEvolutionTimeout(
+            sendMediaMessage({
+              data: {
+                instanceName,
+                phone,
+                caption: finalMessage,
+                mediaUrl: config!.imagem_url!,
+                mediaType: "image",
+              },
+            }),
+            "O envio da mensagem com imagem",
+          )
+        : await withEvolutionTimeout(
+            sendTextMessage({
+              data: { instanceName, phone, message: finalMessage },
+            }),
+            "O envio da mensagem",
+          );
 
       const status = result.success ? "pendente" : "erro";
       const erro = result.success
-        ? result.providerStatus
-          ? `Evolution aceitou a mensagem com status ${result.providerStatus}. A entrega final no WhatsApp ainda não foi confirmada.`
-          : "Evolution aceitou a mensagem, mas a entrega final no WhatsApp ainda não foi confirmada."
+        ? `Envio (${tipoEnvio}) aceito pela Evolution${
+            result.providerStatus ? ` com status ${result.providerStatus}` : ""
+          }. A entrega final no WhatsApp ainda não foi confirmada.`
         : (result.error ?? "Erro desconhecido");
 
       await withRequestTimeout(
@@ -253,8 +309,12 @@ export function EnvioTab() {
       );
 
       if (result.success) {
-        toast.success(`Mensagem aceita pela Evolution para ${nome}.`);
-        toast.info("Ainda falta confirmação real de entrega no WhatsApp.");
+        toast.success(
+          `Mensagem (${tipoEnvio}) aceita pela Evolution para ${nome}.`,
+        );
+        toast.info(
+          "Status 'pendente' = aceita pela API, aguardando entrega final no WhatsApp.",
+        );
       } else {
         toast.error(erro ?? "Erro ao enviar");
       }
@@ -423,6 +483,12 @@ export function EnvioTab() {
             <History className="h-4 w-4" />
             Últimos Envios
           </CardTitle>
+          <CardDescription>
+            <strong>Pendente</strong> = aceito pela Evolution API, aguardando
+            entrega final no WhatsApp do destinatário.{" "}
+            <strong>Erro</strong> = a Evolution rejeitou o envio (passe o mouse
+            no ⓘ para ver o motivo).
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {envios.length === 0 ? (
