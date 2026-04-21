@@ -301,7 +301,14 @@ export function ContatosTab() {
         </div>
       </div>
 
-      <Badge variant="secondary">{contatos.length} contatos</Badge>
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="secondary">{contatos.length} contatos</Badge>
+        {!instanciaId && (
+          <Badge variant="destructive">
+            Conecte o WhatsApp para vincular novos contatos a uma instância.
+          </Badge>
+        )}
+      </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
