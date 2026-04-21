@@ -2,12 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import {
-  sendTextMessage,
-  sendMediaMessage,
-  getInstanceStatus,
-  reconnectInstance,
-} from "@/utils/evolution.functions";
+import { getInstanceStatus } from "@/utils/evolution.functions";
+import { triggerN8nTestWebhook } from "@/utils/n8n-webhook.functions";
 import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
 import { Send, MessageSquare, AlertCircle, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
