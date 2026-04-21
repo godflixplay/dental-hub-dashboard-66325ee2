@@ -150,18 +150,16 @@ export function EnvioTab() {
         const userId = user.id;
         void (async () => {
           try {
-            const accessToken =
-              (await supabase.auth.getSession()).data.session?.access_token ?? "";
-            if (!accessToken) return;
             const statusResult = await withEvolutionTimeout(
-              getInstanceStatus({
-                data: { instanceName, accessToken },
-              }),
+              getInstanceStatus({ data: { instanceName } }),
               "A verificação de status do WhatsApp",
             );
             if (!statusResult.success) return;
-            const realStatus =
-              statusResult.state === "open" ? "connected" : "disconnected";
+            const body = statusResult.data as
+              | { instance?: { state?: string }; state?: string }
+              | undefined;
+            const state = body?.instance?.state ?? body?.state;
+            const realStatus = state === "open" ? "connected" : "disconnected";
             setInstanceStatus(realStatus);
             await supabase
               .from("whatsapp_instances")
