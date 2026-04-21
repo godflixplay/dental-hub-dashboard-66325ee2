@@ -204,19 +204,29 @@ export function EnvioTab() {
     }
 
     const contato = contatos.find((c) => c.id === selectedContato);
-    const phone = contato?.telefone || customPhone.replace(/\D/g, "");
+    const rawPhone = contato?.telefone || customPhone;
     const nome = contato?.nome || customNome || "paciente";
 
-    if (!phone) {
+    if (!rawPhone) {
       toast.error("Selecione um contato ou digite um número");
       return;
     }
+
+    const normalized = normalizePhoneBR(rawPhone);
+    if (!normalized.valid) {
+      toast.error(
+        normalized.reason ??
+          "Número inválido. Use formato 55DDXXXXXXXXX (ex: 5521981089100).",
+      );
+      return;
+    }
+    const phone = normalized.phone;
 
     setSending(true);
     const finalMessage = buildMensagemPreview(mensagemTemplate, nome);
 
     try {
-      const result = await withRequestTimeout(
+      const result = await withEvolutionTimeout(
         sendTextMessage({
           data: { instanceName, phone, message: finalMessage },
         }),
