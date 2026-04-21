@@ -460,7 +460,14 @@ export function EnvioTab() {
             </div>
           </div>
           <CardDescription>
-            Envie uma mensagem de teste para verificar se tudo está funcionando
+            Envie uma mensagem de teste para verificar se tudo está funcionando.
+            {ownerNumber && (
+              <>
+                {" "}Instância conectada no número{" "}
+                <strong>{ownerNumber}</strong>. Envios para esse mesmo número
+                são bloqueados automaticamente.
+              </>
+            )}
           </CardDescription>
         </CardHeader>
       </Card>
