@@ -1,84 +1,55 @@
 
 
-## Plano: Fluxo de conexão do WhatsApp inteligente e sem loops
+## Plano: Corrigir destinatário errado e status defasado de WhatsApp
 
-### Objetivo
-Tornar a aba WhatsApp determinística: ao abrir, decidir automaticamente entre "já conectado", "precisa de QR" ou "precisa criar instância" — sem nunca recriar instância existente e sem loading infinito.
+### Problema 1 — Mensagem indo para o número errado
 
-### Comportamento alvo
+A Evolution API exige número no formato internacional completo (`55` + DDD + número, total 12 ou 13 dígitos). Quando recebe um número curto/inválido, ela entrega na própria conversa da instância (o que vemos na imagem 1: as mensagens aparecem no chat de `21981089100`, que é a própria instância).
 
-```text
-Abrir aba WhatsApp
-        │
-        ▼
-[1] SELECT whatsapp_instances WHERE user_id = me
-        │
-   ┌────┴─────┐
-   │          │
- não existe   existe
-   │          │
-   │          ▼
-   │   [2] getInstanceStatus(instance_name)
-   │          │
-   │     ┌────┴─────────────────┐
-   │     │                      │
-   │   state=open         state≠open
-   │     │                      │
-   │     ▼                      ▼
-   │  marca "connected"    [3] getQrCode(instance_name)
-   │  no banco                  │ exibe QR + inicia polling
-   │  libera Envio              │ a cada 5s checa status
-   │                            │ → quando open: marca conectado
-   ▼
-[botão "Conectar WhatsApp"] → createInstance → fluxo segue para [2]
-```
+**Solução:** normalizar o telefone no frontend antes de enviar e validar formato.
 
-Regra de ouro: **createInstance só roda quando NÃO existe linha em `whatsapp_instances` para o usuário**. Se existir, reutiliza o `instance_name` salvo.
+### Problema 2 — UI mostra "desconectado" ao voltar na tela
+
+`EnvioTab` lê apenas `whatsapp_instances.status` do banco, que pode estar defasado em relação à Evolution. Além disso, o timeout de 12s estoura quando a Evolution API está lenta, derrubando o load inteiro.
+
+**Solução:** consultar `getInstanceStatus` ao carregar EnvioTab, sincronizar com o banco e aumentar o timeout para chamadas à Evolution.
 
 ### Mudanças por arquivo
 
-**`src/components/aniversarios/WhatsAppTab.tsx`** (refatoração principal)
+**`src/components/aniversarios/phone-utils.ts`** (novo)
+- `normalizePhoneBR(input: string): { phone: string; valid: boolean; reason?: string }` — remove tudo que não é dígito, garante DDI `55` no início, valida 12-13 dígitos, valida DDD plausível (11-99). Retorna `{phone, valid, reason}`.
+- Exporta também `formatPhoneDisplay` para exibir formatado.
 
-1. Substituir `fetchInstance` por `bootstrapConnection`:
-   - Busca linha em `whatsapp_instances` (com `withRequestTimeout`).
-   - Se existe: chama `getInstanceStatus`. Se `state === "open"` → atualiza banco para `connected`, marca steps `create/save/qr/scan/connected` como `done`, libera UI conectada. Se não → chama `getQrCode` direto (pula `createInstance`) e exibe QR.
-   - Se não existe: apenas finaliza loading e mostra botão "Conectar WhatsApp".
-   - `finally` sempre limpa `loading` e `connecting` (garante zero loop).
+**`src/components/aniversarios/EnvioTab.tsx`**
+1. Importar `normalizePhoneBR`. Em `handleSend`:
+   - Normalizar `phone` antes de chamar `sendTextMessage`. Se inválido, abortar com toast claro: "Número inválido. Use formato 55DDXXXXXXXXX (ex: 5521981089100)".
+   - Gravar o telefone normalizado no histórico `envios.telefone` (assim o histórico fica consistente).
+2. Ao carregar (`fetchAll`), depois de pegar `instance_name` do banco, chamar `getInstanceStatus` em paralelo com timeout maior (20s) e usar **o estado real da Evolution** como `instanceStatus` — não o campo do banco. Se Evolution disser `open`, atualiza o banco para `connected`; senão atualiza para `disconnected`. Isso elimina a inconsistência ao voltar na tela.
+3. Mensagem de erro específica para timeout sugerindo "Tente novamente, a Evolution API pode estar lenta".
 
-2. `handleConnect` passa a ser usado **só para criar instância nova** (quando `instance` é null). Após criar, delega para `bootstrapConnection` para seguir o mesmo fluxo de status/QR — elimina caminho duplicado.
+**`src/components/aniversarios/ContatosTab.tsx`**
+- Ao salvar/importar contato, normalizar telefone com `normalizePhoneBR`. Se inválido, rejeitar com mensagem. Isso impede que contatos com DDI faltando contaminem futuros envios.
+- Para importação em massa, exibir resumo: "X contatos importados, Y rejeitados por número inválido".
 
-3. Adicionar **polling de status** enquanto QR estiver visível:
-   - `useEffect` dispara `setInterval` de 5s chamando `getInstanceStatus` quando `qrCode && instance.status !== "connected"`.
-   - Quando detectar `open`: limpa intervalo, atualiza banco, esconde QR, marca steps `scan/connected` como `done`, mostra toast de sucesso.
-   - Cleanup do intervalo no unmount e quando `qrCode` virar null.
-   - Limite de segurança: para o polling após 2 minutos para não rodar indefinidamente, mostrando aviso "Tempo esgotado, clique em Atualizar Status".
+**`src/components/aniversarios/request-utils.ts`**
+- Adicionar segunda exportação `withEvolutionTimeout` com 25s (ou aceitar parâmetro `timeoutMs`). Evolution API ocasionalmente leva mais que 12s.
+- `EnvioTab` e `WhatsAppTab` usam o timeout maior em chamadas à Evolution; chamadas Supabase puras continuam com 12s.
 
-4. Estados finais sempre claros:
-   - `loading` (spinner inicial) → vira `false` em todo caminho do `bootstrapConnection`.
-   - `connecting` (botão de criar) → `finally` garante reset.
-   - `qrError` mostra card de erro com botão "Tentar novamente".
-   - Steps refletem o estado real (sem ficar "active" preso).
+**`src/components/aniversarios/MensagemTab.tsx`** — sem mudanças.
 
-5. Botão "Já escaneei" continua disponível como fallback manual mesmo com polling automático.
+**`src/utils/evolution.functions.ts`** — sem mudanças (a normalização ocorre no client antes de chegar aqui; o schema atual `phone: 10-20 dígitos` continua válido).
 
-### O que NÃO muda
+### Como o usuário vai perceber
 
-- `src/utils/evolution.functions.ts`: `createInstance`, `getQrCode`, `getInstanceStatus` permanecem como estão. A correção é puramente de orquestração no frontend.
-- Tabelas Supabase, RLS e migrações: nada novo.
-- Demais abas (Mensagem, Contatos, Envio): intocadas.
+- Tentar enviar para `21969622045` → toast: "Número inválido. Use formato 55DDXXXXXXXXX". Não envia.
+- Digitar `21981089100` → normalizado para `5521981089100` automaticamente, envio segue.
+- Voltar na aba Envio depois de conectar → status "WhatsApp Conectado" correto, sem precisar reabrir a aba WhatsApp, porque o status é lido em tempo real da Evolution.
+- Se Evolution demorar 15s → ainda funciona (timeout subiu para 25s); se exceder, mensagem de erro clara em vez de tela quebrada.
 
 ### Detalhes técnicos
 
-- Usar `withRequestTimeout` em todas as chamadas dentro do `bootstrapConnection` para evitar promessas penduradas (timeout 12s já configurado).
-- Polling com `useRef<NodeJS.Timeout | null>` para o `setInterval` + `useRef<number>` para contar tentativas.
-- Quando `getInstanceStatus` retornar `success: false` durante polling, **não** parar o polling imediatamente (pode ser blip de rede); só parar após 3 falhas consecutivas e mostrar `qrError`.
-- Atualização do banco usa o client `supabase` (RLS garante isolamento por `user_id`).
-- Nenhum `await` fica fora de `try/catch/finally` que controle `loading`/`connecting`.
-
-### Resultado esperado
-
-- Abrir aba já conectada → spinner curto → tela "WhatsApp conectado" sem chamar `createInstance` nem `getQrCode`.
-- Abrir aba com instância criada mas desconectada → spinner curto → QR aparece automaticamente + polling detecta a leitura.
-- Abrir aba sem instância → spinner curto → botão "Conectar WhatsApp" habilitado.
-- Em qualquer erro (timeout, API fora) → card vermelho com mensagem e botão "Tentar novamente". Nunca spinner infinito.
+- Validação BR: `^55(1[1-9]|2[12478]|3[1-578]|4[1-9]|5[13-5]|6[1-9]|7[13479]|8[1-9]|9[1-9])\d{8,9}$` — DDD válido + 8 ou 9 dígitos do número.
+- Sincronização de status: dentro do `try` do `fetchAll`, após obter `instanceRes.data.instance_name`, executar `getInstanceStatus` e fazer `await supabase.from("whatsapp_instances").update({status: realStatus}).eq("id", instanceId)` em fire-and-forget (não bloqueia render).
+- Não causa loop: a sincronização só roda quando `fetchAll` é chamado (mount + após envio), não em intervalo.
+- Sem mudanças de banco/migração.
 
