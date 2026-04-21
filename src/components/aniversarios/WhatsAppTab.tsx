@@ -156,12 +156,19 @@ export function WhatsAppTab() {
             .update({ status: "connected" })
             .eq("id", instanceRow.id);
           setInstance({ ...instanceRow, status: "connected" });
+          // Mantém o cache do React Query alinhado com o status real.
+          void queryClient.invalidateQueries({
+            queryKey: ["aniv:wpp:instance", userId],
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ["aniv:instance", userId],
+          });
         } catch {
           // não bloqueia UI por falha de update
         }
       }
     },
-    [stopPolling],
+    [stopPolling, queryClient, userId],
   );
 
   const fetchQrAndShow = useCallback(
@@ -382,8 +389,15 @@ export function WhatsAppTab() {
       updateStep("create", "done");
       updateStep("save", "done");
 
-      // Recarrega a linha recém-criada e segue o fluxo normal de status/QR
-      await bootstrapConnection();
+      // Limpa o ref para permitir novo bootstrap com a instância recém-criada
+      bootstrappedForRef.current = null;
+      // Invalida cache para forçar refetch da nova instância no useQuery
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:wpp:instance", userId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:instance", userId],
+      });
     } catch (error) {
       setQrError(getAniversariosErrorMessage(error));
       toast.error(getAniversariosErrorMessage(error));
@@ -420,6 +434,9 @@ export function WhatsAppTab() {
           .update({ status: "disconnected" })
           .eq("id", instance.id);
         setInstance({ ...instance, status: "disconnected" });
+        void queryClient.invalidateQueries({
+          queryKey: ["aniv:wpp:instance", userId],
+        });
       }
     } catch (error) {
       toast.error(getAniversariosErrorMessage(error));
