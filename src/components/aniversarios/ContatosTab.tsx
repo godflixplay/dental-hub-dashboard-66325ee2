@@ -35,6 +35,7 @@ interface Contato {
   nome: string;
   telefone: string;
   data_nascimento: string | null;
+  instancia_id: string | null;
   created_at: string;
 }
 
@@ -47,6 +48,7 @@ export function ContatosTab() {
   const [addOpen, setAddOpen] = useState(false);
   const [editContato, setEditContato] = useState<Contato | null>(null);
   const [form, setForm] = useState({ nome: "", telefone: "", data_nascimento: "" });
+  const [instanciaId, setInstanciaId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fetchContatos = async () => {
@@ -66,9 +68,20 @@ export function ContatosTab() {
     }
   };
 
+  const fetchInstancia = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("whatsapp_instances")
+      .select("id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    setInstanciaId((data as { id: string } | null)?.id ?? null);
+  };
+
   useEffect(() => {
     fetchContatos();
-  }, []);
+    fetchInstancia();
+  }, [user?.id]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
