@@ -5,6 +5,7 @@ import {
   sendTextMessage,
   sendMediaMessage,
   getInstanceStatus,
+  reconnectInstance,
 } from "@/utils/evolution.functions";
 import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
 import { Send, MessageSquare, AlertCircle, History } from "lucide-react";
