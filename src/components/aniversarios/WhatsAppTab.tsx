@@ -253,41 +253,39 @@ export function WhatsAppTab() {
     [markConnected, stopPolling],
   );
 
+  // Bootstrap usa a instância cacheada pelo useQuery — sem refetch SQL
+  // toda vez que a aba remonta. Só dispara verificação de status/QR uma vez
+  // por instância (`bootstrappedForRef`).
   const bootstrapConnection = useCallback(async () => {
     if (!user) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+
+    // Aguarda o useQuery terminar a primeira carga
+    if (instanceQuery.isLoading) return;
+
     setQrError(null);
-    resetSteps();
 
     try {
-      const accessToken = await getAccessToken();
-
-      // [1] Verifica se já existe instância
-      const { data: existing, error: selectError } = await withRequestTimeout(
-        supabase
-          .from("whatsapp_instances")
-          .select("*")
-          .eq("user_id", user.id)
-          .maybeSingle(),
-        "O carregamento da instância do WhatsApp",
-      );
-      if (selectError) throw selectError;
-
-      const existingInstance = (existing as Instance) ?? null;
+      const existingInstance = instanceQuery.data ?? null;
       setInstance(existingInstance);
 
       if (!existingInstance) {
-        // Sem instância → mostrar botão "Conectar WhatsApp"
+        resetSteps();
         return;
       }
 
-      // [2] Existe → consulta status SEM recriar
+      // Já rodou bootstrap para esta instância nesta sessão? Não refaz QR.
+      const key = `${existingInstance.id}:${existingInstance.status}`;
+      if (bootstrappedForRef.current === key) return;
+      bootstrappedForRef.current = key;
+
+      resetSteps();
       updateStep("create", "done");
       updateStep("save", "done");
 
+      const accessToken = await getAccessToken();
       const statusResult = await withRequestTimeout(
         getInstanceStatus({
           data: {
@@ -312,7 +310,6 @@ export function WhatsAppTab() {
         return;
       }
 
-      // [3] Não conectado → busca QR direto (não recria instância)
       const qrOutcome = await fetchQrAndShow(
         existingInstance.instance_name,
         accessToken,
@@ -329,11 +326,18 @@ export function WhatsAppTab() {
     }
   }, [
     user,
+    instanceQuery.isLoading,
+    instanceQuery.data,
     getAccessToken,
     fetchQrAndShow,
     markConnected,
     startPolling,
   ]);
+
+  useEffect(() => {
+    // Quando o useQuery termina, rebaixa o `loading` local (mesmo sem instância).
+    if (!instanceQuery.isLoading) setLoading(false);
+  }, [instanceQuery.isLoading]);
 
   useEffect(() => {
     bootstrapConnection();
