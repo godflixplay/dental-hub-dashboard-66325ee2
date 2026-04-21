@@ -2,12 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import {
-  sendTextMessage,
-  sendMediaMessage,
-  getInstanceStatus,
-  reconnectInstance,
-} from "@/utils/evolution.functions";
+import { getInstanceStatus } from "@/utils/evolution.functions";
+import { triggerN8nTestWebhook } from "@/utils/n8n-webhook.functions";
 import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
 import { Send, MessageSquare, AlertCircle, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -350,144 +346,39 @@ export function EnvioTab() {
 
     setSending(true);
     const finalMessage = buildMensagemPreview(mensagemTemplate, nome);
-    const hasImage = Boolean(config?.imagem_url);
-    const tipoEnvio = hasImage ? "imagem + legenda" : "texto";
 
     try {
       const accessToken = await getAccessToken();
 
-      const stateCheck = await withEvolutionTimeout(
-        getInstanceStatus({ data: { instanceName, accessToken } }),
-        "A verificação de status do WhatsApp",
+      // Aciona o webhook do n8n. O n8n é responsável por:
+      // 1) chamar a Evolution API para enviar a mensagem
+      // 2) inserir o registro em `envios_whatsapp` (com user_id correto)
+      // O frontend NÃO insere nada no banco — a linha aparecerá automaticamente
+      // na tabela "Últimos Envios" via Supabase Realtime.
+      const result = await withRequestTimeout(
+        triggerN8nTestWebhook({
+          data: {
+            accessToken,
+            nome,
+            telefone: phone,
+            mensagem: finalMessage,
+          },
+        }),
+        "O acionamento do webhook de teste",
+        20000,
       );
 
-      if (!stateCheck.success) {
-        toast.error(
-          `Não foi possível verificar o status da instância: ${stateCheck.error ?? "erro desconhecido"}`,
-        );
-        return;
-      }
-
-      const stateBody = stateCheck.data as
-        | { instance?: { state?: string }; state?: string }
-        | undefined;
-      const realState = stateBody?.instance?.state ?? stateBody?.state;
-      const liveOwner = stateCheck.ownerNumber ?? ownerNumber;
-      if (liveOwner) setOwnerNumber(liveOwner);
-
-      if (realState !== "open") {
-        setInstanceStatus("disconnected");
-        await supabase
-          .from("whatsapp_instances")
-          .update({ status: "disconnected" })
-          .eq("user_id", user.id);
-        toast.error(
-          "WhatsApp não está conectado. Vá na aba WhatsApp e escaneie o QR Code novamente.",
-        );
-        void reconnectInstance({
-          data: { instanceName, accessToken },
-        }).catch(() => undefined);
-        return;
-      }
-
-      setInstanceStatus("connected");
-
-      if (liveOwner && liveOwner === phone) {
-        toast.error(
-          `Bloqueado: você está tentando enviar para o próprio número da instância (${liveOwner}). Use outro destinatário.`,
-        );
-        return;
-      }
-
-      const result = hasImage
-        ? await withEvolutionTimeout(
-            sendMediaMessage({
-              data: {
-                instanceName,
-                accessToken,
-                phone,
-                caption: finalMessage,
-                mediaUrl: config!.imagem_url!,
-                mediaType: "image",
-              },
-            }),
-            "O envio da mensagem com imagem",
-          )
-        : await withEvolutionTimeout(
-            sendTextMessage({
-              data: { instanceName, accessToken, phone, message: finalMessage },
-            }),
-            "O envio da mensagem",
-          );
-
-      const fullResponseLog = JSON.stringify(
-        {
-          number: phone,
-          instance_name: instanceName,
-          tipo: tipoEnvio,
-          providerStatus: result.success ? result.providerStatus : undefined,
-          messageId: result.success ? result.messageId : undefined,
-          remoteJid: result.success ? result.remoteJid : undefined,
-          response: result.success ? result.data : undefined,
-          error: result.success ? undefined : result.error,
-        },
-        null,
-        0,
-      ).slice(0, 4000);
-
-      console.log("[EnvioTab] envio completo:", fullResponseLog);
-
-      let status: "pendente" | "erro";
-      let erro: string;
       if (!result.success) {
-        status = "erro";
-        erro = `${result.error ?? "Erro desconhecido"} | log: ${fullResponseLog}`;
-      } else if (!result.messageId) {
-        status = "erro";
-        erro = `Evolution retornou sucesso mas sem messageId/key.id (falha silenciosa). Mensagem provavelmente NÃO foi entregue. log: ${fullResponseLog}`;
-      } else {
-        status = "pendente";
-        erro = `Aceito pela Evolution (${tipoEnvio}). messageId=${result.messageId} remoteJid=${result.remoteJid ?? "?"} providerStatus=${result.providerStatus || "?"}. Aguardando confirmação final no WhatsApp. log: ${fullResponseLog}`;
+        toast.error(result.error);
+        return;
       }
 
-      await withRequestTimeout(
-        supabase.from("envios").insert({
-          user_id: user.id,
-          contato_id: contato?.id ?? null,
-          telefone: phone,
-          nome,
-          status,
-          erro,
-        }),
-        "O registro do histórico de envio",
+      toast.success(`Disparo enviado ao n8n para ${nome}.`);
+      toast.info(
+        "Aguardando processamento do n8n — o registro aparecerá em \"Últimos Envios\" automaticamente.",
       );
-
-      if (status === "pendente") {
-        toast.success(
-          `Mensagem (${tipoEnvio}) aceita pela Evolution para ${nome}.`,
-        );
-        toast.info(
-          "Status 'pendente' = aceita pela API, aguardando entrega final no WhatsApp.",
-        );
-      } else {
-        toast.error(erro.split(" | log:")[0]);
-      }
-      await refetchAll();
     } catch (err) {
-      const msg = getAniversariosErrorMessage(err);
-      await withRequestTimeout(
-        supabase.from("envios").insert({
-          user_id: user.id,
-          contato_id: contato?.id ?? null,
-          telefone: phone,
-          nome,
-          status: "erro",
-          erro: `${msg} | instance=${instanceName} number=${phone}`,
-        }),
-        "O registro do erro de envio",
-      ).catch(() => undefined);
-      toast.error(msg);
-      await refetchAll();
+      toast.error(getAniversariosErrorMessage(err));
     } finally {
       setSending(false);
     }
