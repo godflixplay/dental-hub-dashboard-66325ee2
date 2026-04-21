@@ -5,13 +5,14 @@ type: feature
 ---
 
 ## Tabelas (Supabase externo)
-- `contatos` (user_id, nome, telefone, data_nascimento)
-- `whatsapp_instances` (user_id, instance_name, instance_id, status)
+- `contatos` (user_id, nome, telefone, data_nascimento, instancia_id)
+- `whatsapp_instances` (user_id, instance_name, instance_id, status, imagem_url)
 - `config_mensagem` (user_id UNIQUE, mensagem, imagem_url, updated_at)
 - `envios` (user_id, contato_id, telefone, nome, status: enviado|erro|pendente, erro, data_envio)
 
 ## Storage
-- Bucket público `mensagens` — upload restrito ao path `{user_id}/...` via RLS
+- Bucket `mensagens` (legado)
+- Bucket público `imagens-whatsapp` — ATUAL para imagem de aniversário. Path `{user_id}/{instance_name}/imagem-{ts}.{ext}`. RLS: write restrito ao folder `{user_id}`. URL pública gravada em `whatsapp_instances.imagem_url` E `config_mensagem.imagem_url` (espelhadas no `MensagemTab.handleSave`).
 
 ## Server functions (`src/utils/evolution.functions.ts`)
 - `createInstance`, `getQrCode`, `getInstanceStatus`, `sendTextMessage`
