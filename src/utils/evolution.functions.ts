@@ -15,6 +15,16 @@ const sendMessageSchema = z.object({
   message: z.string().min(1).max(2000),
 });
 
+const sendMediaSchema = z.object({
+  instanceName: z.string().min(1).max(100),
+  phone: z.string().min(10).max(20).regex(/^[0-9]+$/),
+  caption: z.string().max(2000).optional().default(""),
+  mediaUrl: z.string().url().max(2048),
+  mediaType: z.enum(["image", "video", "document", "audio"]).default("image"),
+  mimetype: z.string().min(1).max(100).optional(),
+  fileName: z.string().min(1).max(200).optional(),
+});
+
 const instanceNameSchema = z.object({
   instanceName: z.string().min(1).max(100),
   accessToken: z.string().min(1),
