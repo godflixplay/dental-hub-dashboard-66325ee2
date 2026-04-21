@@ -1,55 +1,145 @@
 
 
-## Plano: Corrigir destinatário errado e status defasado de WhatsApp
+## Plano: corrigir envio com imagem, instância errada, status enganoso e erro ao voltar para a aba
 
-### Problema 1 — Mensagem indo para o número errado
+### O que está realmente errado
 
-A Evolution API exige número no formato internacional completo (`55` + DDD + número, total 12 ou 13 dígitos). Quando recebe um número curto/inválido, ela entrega na própria conversa da instância (o que vemos na imagem 1: as mensagens aparecem no chat de `21981089100`, que é a própria instância).
+1. **A imagem nunca é enviada**
+   - Hoje a aba Mensagem salva `imagem_url`, mas a aba Envio chama apenas `sendTextMessage`.
+   - Resultado: o sistema sempre envia só texto.
 
-**Solução:** normalizar o telefone no frontend antes de enviar e validar formato.
+2. **As mensagens estão saindo da instância errada**
+   - `WhatsAppTab.tsx` usa um nome fixo de instância: `DentalHubTeste`.
+   - Isso faz usuários diferentes reutilizarem a mesma instância da Evolution.
+   - Como a instância conectada está no número `21981089100`, a mensagem aparece nessa conversa, não no destinatário esperado.
 
-### Problema 2 — UI mostra "desconectado" ao voltar na tela
+3. **`pendente` não significa entregue**
+   - A própria documentação da Evolution mostra retorno `status: "PENDING"` logo após `sendText` e `sendMedia`.
+   - Isso significa “aceita pela API”, não “chegou no WhatsApp do destinatário”.
+   - O sistema hoje grava esse retorno como se fosse um estado final, o que confunde.
 
-`EnvioTab` lê apenas `whatsapp_instances.status` do banco, que pode estar defasado em relação à Evolution. Além disso, o timeout de 12s estoura quando a Evolution API está lenta, derrubando o load inteiro.
-
-**Solução:** consultar `getInstanceStatus` ao carregar EnvioTab, sincronizar com o banco e aumentar o timeout para chamadas à Evolution.
+4. **A aba Envio quebra ao voltar**
+   - `fetchAll` usa um `Promise.all` único com timeout geral.
+   - Se qualquer consulta demorar, especialmente a parte da Evolution, a aba inteira falha com erro de carregamento.
+   - Além disso, o status real da instância está sendo conciliado de forma frágil.
 
 ### Mudanças por arquivo
 
-**`src/components/aniversarios/phone-utils.ts`** (novo)
-- `normalizePhoneBR(input: string): { phone: string; valid: boolean; reason?: string }` — remove tudo que não é dígito, garante DDI `55` no início, valida 12-13 dígitos, valida DDD plausível (11-99). Retorna `{phone, valid, reason}`.
-- Exporta também `formatPhoneDisplay` para exibir formatado.
+**`src/components/aniversarios/WhatsAppTab.tsx`**
+- Remover `INSTANCE_NAME_FIXED = "DentalHubTeste"`.
+- Gerar um `instance_name` único por usuário, estável e previsível, por exemplo baseado no `user.id`.
+- Ao abrir a aba:
+  - buscar a instância do usuário no banco;
+  - se existir, usar **somente** essa instância;
+  - se não existir, criar uma nova instância exclusiva do usuário.
+- Ao detectar que a instância salva pertence ao usuário atual, nunca reutilizar instância compartilhada.
+- Melhorar estados finais da tela: `conectado`, `aguardando QR`, `erro`, sem loading preso.
+
+**`src/utils/evolution.functions.ts`**
+- Manter `sendTextMessage`, mas adicionar `sendMediaMessage`.
+- `sendMediaMessage` chama `/message/sendMedia/{instance}` usando:
+  - `number`
+  - `caption`
+  - `media`
+  - `mimetype`
+  - `mediatype`
+  - `fileName`
+- Retornar também `providerStatus`, `messageId` e `remoteJid` quando vierem na resposta.
+- Em `createInstance`, continuar tratando “already in use”, mas agora com nome único por usuário.
+- Melhorar parsing das respostas da Evolution para logs e diagnóstico.
 
 **`src/components/aniversarios/EnvioTab.tsx`**
-1. Importar `normalizePhoneBR`. Em `handleSend`:
-   - Normalizar `phone` antes de chamar `sendTextMessage`. Se inválido, abortar com toast claro: "Número inválido. Use formato 55DDXXXXXXXXX (ex: 5521981089100)".
-   - Gravar o telefone normalizado no histórico `envios.telefone` (assim o histórico fica consistente).
-2. Ao carregar (`fetchAll`), depois de pegar `instance_name` do banco, chamar `getInstanceStatus` em paralelo com timeout maior (20s) e usar **o estado real da Evolution** como `instanceStatus` — não o campo do banco. Se Evolution disser `open`, atualiza o banco para `connected`; senão atualiza para `disconnected`. Isso elimina a inconsistência ao voltar na tela.
-3. Mensagem de erro específica para timeout sugerindo "Tente novamente, a Evolution API pode estar lenta".
+- Se `config.imagem_url` existir, enviar com `sendMediaMessage`; senão, usar `sendTextMessage`.
+- Antes do envio:
+  - validar número com `normalizePhoneBR`;
+  - checar status real da instância com a Evolution, sem depender só do banco.
+- Separar o carregamento inicial em etapas:
+  - carregar Supabase primeiro;
+  - verificar status da Evolution depois, sem derrubar a aba inteira se a Evolution estiver lenta.
+- Evitar que um timeout da Evolution impeça a renderização dos contatos, histórico e configuração.
+- Ajustar o histórico:
+  - manter `pendente` como “aceita pela Evolution, entrega final não confirmada”;
+  - mostrar tooltip/texto mais claro;
+  - exibir se o envio foi `texto` ou `imagem + legenda`.
+- Quando houver erro real da Evolution, registrar erro detalhado no histórico.
 
-**`src/components/aniversarios/ContatosTab.tsx`**
-- Ao salvar/importar contato, normalizar telefone com `normalizePhoneBR`. Se inválido, rejeitar com mensagem. Isso impede que contatos com DDI faltando contaminem futuros envios.
-- Para importação em massa, exibir resumo: "X contatos importados, Y rejeitados por número inválido".
+**`src/components/aniversarios/MensagemTab.tsx`**
+- Manter upload/salvamento como origem da imagem.
+- Melhorar feedback visual:
+  - mostrar claramente “imagem salva e pronta para envio”;
+  - diferenciar preview local (`blob:`) de imagem já persistida (`imagem_url`).
+- Garantir que remover imagem limpe corretamente o estado salvo e o preview.
 
 **`src/components/aniversarios/request-utils.ts`**
-- Adicionar segunda exportação `withEvolutionTimeout` com 25s (ou aceitar parâmetro `timeoutMs`). Evolution API ocasionalmente leva mais que 12s.
-- `EnvioTab` e `WhatsAppTab` usam o timeout maior em chamadas à Evolution; chamadas Supabase puras continuam com 12s.
+- Manter timeout separado para Evolution.
+- Adicionar mensagem específica para timeout da Evolution, sem transformar isso em falha total da aba.
+- Permitir usar timeout customizado por chamada quando necessário.
 
-**`src/components/aniversarios/MensagemTab.tsx`** — sem mudanças.
+### Ajuste de arquitetura importante
 
-**`src/utils/evolution.functions.ts`** — sem mudanças (a normalização ocorre no client antes de chegar aqui; o schema atual `phone: 10-20 dígitos` continua válido).
+**Instância exclusiva por usuário**
+- Cada usuário precisa ter sua própria instância na Evolution.
+- O nome da instância deve ser algo como:
+  - `dentalhub-{userIdCurto}`
+  - ou `aniv-{user.id}`
+- Isso elimina o principal bug atual: mensagens saindo do WhatsApp de outra pessoa.
 
-### Como o usuário vai perceber
+### Como o comportamento vai ficar
 
-- Tentar enviar para `21969622045` → toast: "Número inválido. Use formato 55DDXXXXXXXXX". Não envia.
-- Digitar `21981089100` → normalizado para `5521981089100` automaticamente, envio segue.
-- Voltar na aba Envio depois de conectar → status "WhatsApp Conectado" correto, sem precisar reabrir a aba WhatsApp, porque o status é lido em tempo real da Evolution.
-- Se Evolution demorar 15s → ainda funciona (timeout subiu para 25s); se exceder, mensagem de erro clara em vez de tela quebrada.
+```text
+Usuário abre aba WhatsApp
+  -> sistema busca a instância dele no banco
+  -> consulta /instance/connectionState/{instance_name}
+  -> se open: conectado
+  -> se não open: gera QR dessa mesma instância
+  -> se não existir instância: cria uma nova exclusiva do usuário
+```
+
+```text
+Usuário abre aba Envio
+  -> contatos/config/histórico carregam do Supabase
+  -> status da Evolution é consultado separadamente
+  -> a tela nunca fica travada inteira por causa de uma chamada lenta
+```
+
+```text
+Usuário envia mensagem
+  -> sem imagem: /message/sendText/{instance}
+  -> com imagem: /message/sendMedia/{instance}
+  -> histórico registra aceite da Evolution e detalhes retornados
+```
+
+### Resultado esperado
+
+- A imagem configurada passa a ser enviada de fato.
+- A mensagem sai da instância correta do usuário, não do número `21981089100`.
+- O destinatário `21969622045` passa a receber na conversa dele.
+- O status `pendente` deixa de parecer bug e passa a ser descrito corretamente como “aceito, aguardando confirmação final”.
+- Ao sair e voltar para a aba, a tela não quebra por timeout geral.
+- O layout continua responsivo nas quatro abas.
 
 ### Detalhes técnicos
 
-- Validação BR: `^55(1[1-9]|2[12478]|3[1-578]|4[1-9]|5[13-5]|6[1-9]|7[13479]|8[1-9]|9[1-9])\d{8,9}$` — DDD válido + 8 ou 9 dígitos do número.
-- Sincronização de status: dentro do `try` do `fetchAll`, após obter `instanceRes.data.instance_name`, executar `getInstanceStatus` e fazer `await supabase.from("whatsapp_instances").update({status: realStatus}).eq("id", instanceId)` em fire-and-forget (não bloqueia render).
-- Não causa loop: a sincronização só roda quando `fetchAll` é chamado (mount + após envio), não em intervalo.
-- Sem mudanças de banco/migração.
+- A causa mais grave é o nome fixo `DentalHubTeste`, que cria compartilhamento indevido de instância.
+- `sendMedia` é obrigatório para suportar `imagem_url`; salvar imagem no banco sozinho não envia mídia.
+- O `status: "PENDING"` é comportamento esperado da Evolution no retorno inicial; não deve ser tratado como confirmação de entrega.
+- Para confirmação real de entrega no futuro, o ideal é salvar `messageId/providerStatus` e integrar webhook/status callback da Evolution.
+
+### Arquivos a editar
+
+- `src/components/aniversarios/WhatsAppTab.tsx`
+- `src/components/aniversarios/EnvioTab.tsx`
+- `src/components/aniversarios/MensagemTab.tsx`
+- `src/components/aniversarios/request-utils.ts`
+- `src/utils/evolution.functions.ts`
+
+### Validação após implementar
+
+1. Conectar um usuário novo e confirmar que a instância criada tem nome exclusivo.
+2. Salvar mensagem com imagem e verificar preview persistido.
+3. Enviar para `21969622045` e confirmar que:
+   - não aparece mais na conversa da instância errada;
+   - usa `sendMedia` quando houver imagem.
+4. Sair da aba e voltar para confirmar que não há erro de carregamento.
+5. Testar em viewport menor para garantir responsividade das abas, badges, cards e histórico.
 
