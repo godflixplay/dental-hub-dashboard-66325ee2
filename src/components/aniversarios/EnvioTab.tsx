@@ -265,20 +265,35 @@ export function EnvioTab() {
 
     setSending(true);
     const finalMessage = buildMensagemPreview(mensagemTemplate, nome);
+    const hasImage = Boolean(config?.imagem_url);
+    const tipoEnvio = hasImage ? "imagem + legenda" : "texto";
 
     try {
-      const result = await withEvolutionTimeout(
-        sendTextMessage({
-          data: { instanceName, phone, message: finalMessage },
-        }),
-        "O envio da mensagem",
-      );
+      const result = hasImage
+        ? await withEvolutionTimeout(
+            sendMediaMessage({
+              data: {
+                instanceName,
+                phone,
+                caption: finalMessage,
+                mediaUrl: config!.imagem_url!,
+                mediaType: "image",
+              },
+            }),
+            "O envio da mensagem com imagem",
+          )
+        : await withEvolutionTimeout(
+            sendTextMessage({
+              data: { instanceName, phone, message: finalMessage },
+            }),
+            "O envio da mensagem",
+          );
 
       const status = result.success ? "pendente" : "erro";
       const erro = result.success
-        ? result.providerStatus
-          ? `Evolution aceitou a mensagem com status ${result.providerStatus}. A entrega final no WhatsApp ainda não foi confirmada.`
-          : "Evolution aceitou a mensagem, mas a entrega final no WhatsApp ainda não foi confirmada."
+        ? `Envio (${tipoEnvio}) aceito pela Evolution${
+            result.providerStatus ? ` com status ${result.providerStatus}` : ""
+          }. A entrega final no WhatsApp ainda não foi confirmada.`
         : (result.error ?? "Erro desconhecido");
 
       await withRequestTimeout(
@@ -294,8 +309,12 @@ export function EnvioTab() {
       );
 
       if (result.success) {
-        toast.success(`Mensagem aceita pela Evolution para ${nome}.`);
-        toast.info("Ainda falta confirmação real de entrega no WhatsApp.");
+        toast.success(
+          `Mensagem (${tipoEnvio}) aceita pela Evolution para ${nome}.`,
+        );
+        toast.info(
+          "Status 'pendente' = aceita pela API, aguardando entrega final no WhatsApp.",
+        );
       } else {
         toast.error(erro ?? "Erro ao enviar");
       }
