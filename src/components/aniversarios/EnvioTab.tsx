@@ -68,11 +68,12 @@ interface ConfigMensagem {
 }
 
 export function EnvioTab() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [contatos, setContatos] = useState<Contato[]>([]);
   const [config, setConfig] = useState<ConfigMensagem | null>(null);
   const [instanceName, setInstanceName] = useState<string | null>(null);
   const [instanceStatus, setInstanceStatus] = useState<string>("disconnected");
+  const [ownerNumber, setOwnerNumber] = useState<string | null>(null);
   const [envios, setEnvios] = useState<Envio[]>([]);
   const [selectedContato, setSelectedContato] = useState("");
   const [customPhone, setCustomPhone] = useState("");
