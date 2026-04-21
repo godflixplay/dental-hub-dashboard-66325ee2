@@ -109,8 +109,8 @@ describe("assertPersistableImageUrl", () => {
     ).not.toThrow();
   });
   it("BLOQUEIA gravar null quando há upload pendente", () => {
-    expect(() => assertPersistableImageUrl(null, true)).toThrow(/null/i);
-    expect(() => assertPersistableImageUrl("", true)).toThrow();
+    expect(() => assertPersistableImageUrl(null, true)).toThrow(/inválida/i);
+    expect(() => assertPersistableImageUrl("", true)).toThrow(/inválida/i);
   });
 });
 

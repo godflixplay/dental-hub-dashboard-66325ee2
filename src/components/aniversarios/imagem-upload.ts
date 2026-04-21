@@ -52,6 +52,8 @@ export const BUCKET_NAME = "imagens-whatsapp";
 /** Sanitiza extensão para path estável: apenas [a-z0-9]. */
 export function sanitizeExt(rawName: string | undefined | null): string {
   if (!rawName) return "png";
+  // Sem ponto = sem extensão.
+  if (!rawName.includes(".")) return "png";
   const tail = rawName.split(".").pop() ?? "";
   const cleaned = tail.toLowerCase().replace(/[^a-z0-9]/g, "");
   return cleaned || "png";
