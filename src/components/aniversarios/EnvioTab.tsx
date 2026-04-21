@@ -193,12 +193,12 @@ export function EnvioTab() {
       // Etapa 2: sincroniza status real da Evolution em background.
       // NÃO bloqueia render. Erro/timeout aqui não afeta a aba.
       if (resolvedInstanceName) {
-        const instanceName = resolvedInstanceName;
+        const instanceNameLocal = resolvedInstanceName;
         const userId = user.id;
         void (async () => {
           try {
             const statusResult = await withEvolutionTimeout(
-              getInstanceStatus({ data: { instanceName } }),
+              getInstanceStatus({ data: { instanceName: instanceNameLocal } }),
               "A verificação de status do WhatsApp",
             );
             if (!statusResult.success) return;
@@ -208,6 +208,9 @@ export function EnvioTab() {
             const state = body?.instance?.state ?? body?.state;
             const realStatus = state === "open" ? "connected" : "disconnected";
             setInstanceStatus(realStatus);
+            if (statusResult.ownerNumber) {
+              setOwnerNumber(statusResult.ownerNumber);
+            }
             await supabase
               .from("whatsapp_instances")
               .update({ status: realStatus })
