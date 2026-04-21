@@ -59,6 +59,25 @@ export function MensagemTab() {
     },
   });
 
+  // Instância do usuário (para compor o path da imagem por instância e
+  // gravar a URL pública em whatsapp_instances.imagem_url).
+  const instanceQuery = useQuery({
+    queryKey: ["aniv:wpp:instance", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from("whatsapp_instances")
+          .select("id, instance_name")
+          .eq("user_id", userId!)
+          .maybeSingle(),
+        "O carregamento da instância do WhatsApp",
+      );
+      if (error) throw error;
+      return (data as { id: string; instance_name: string } | null) ?? null;
+    },
+  });
+
   const config = configQuery.data ?? null;
 
   // Sincroniza o estado local com a config carregada (apenas quando muda
@@ -123,10 +142,24 @@ export function MensagemTab() {
   const uploadPendingFile = async () => {
     if (!user || !pendingFile) return imagemUrl;
 
-    const ext = pendingFile.name.split(".").pop() || "jpg";
-    const path = `${user.id}/banner-${Date.now()}.${ext}`;
+    const instanceName = instanceQuery.data?.instance_name;
+    if (!instanceName) {
+      throw new Error(
+        "Conecte uma instância do WhatsApp antes de enviar a imagem.",
+      );
+    }
+
+    const ext = (pendingFile.name.split(".").pop() || "png").toLowerCase();
+    // Path: {user_id}/{instance_name}/imagem-{timestamp}.{ext}
+    // Timestamp garante URL nova (evita cache do n8n/Evolution ao trocar imagem).
+    const path = `${user.id}/${instanceName}/imagem-${Date.now()}.${ext}`;
     const { error: uploadError } = await withRequestTimeout(
-      supabase.storage.from("mensagens").upload(path, pendingFile, { upsert: true }),
+      supabase.storage
+        .from("imagens-whatsapp")
+        .upload(path, pendingFile, {
+          upsert: true,
+          contentType: pendingFile.type || undefined,
+        }),
       "O upload da imagem",
     );
 
@@ -135,7 +168,9 @@ export function MensagemTab() {
       throw uploadError;
     }
 
-    const { data } = supabase.storage.from("mensagens").getPublicUrl(path);
+    const { data } = supabase.storage
+      .from("imagens-whatsapp")
+      .getPublicUrl(path);
     return data.publicUrl;
   };
 
@@ -184,6 +219,25 @@ export function MensagemTab() {
       );
       if (error) throw error;
 
+      // Espelha a imagem pública também em whatsapp_instances.imagem_url
+      // (cada instância carrega a própria URL — consumida pelo n8n).
+      const instanceId = instanceQuery.data?.id;
+      if (instanceId) {
+        const { error: instanceUpdateError } = await withRequestTimeout(
+          supabase
+            .from("whatsapp_instances")
+            .update({ imagem_url: nextImagemUrl })
+            .eq("id", instanceId),
+          "A atualização da imagem da instância",
+        );
+        if (instanceUpdateError) {
+          console.error(
+            "[MensagemTab] erro ao atualizar imagem_url da instância",
+            instanceUpdateError,
+          );
+        }
+      }
+
       // Reseta a flag para forçar re-sync com o novo dado vindo do servidor.
       lastSyncedIdRef.current = null;
       await queryClient.invalidateQueries({
@@ -192,6 +246,12 @@ export function MensagemTab() {
       // Também invalida a query usada pela aba Envio para manter consistência.
       await queryClient.invalidateQueries({
         queryKey: ["aniv:config", userId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:wpp:instance", userId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:instance", userId],
       });
       setPendingFile(null);
       setLocalPreviewUrl((current) => {
