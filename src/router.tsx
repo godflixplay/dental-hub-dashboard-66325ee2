@@ -1,8 +1,53 @@
 import { createRouter, useRouter } from "@tanstack/react-router";
+import { QueryClient } from "@tanstack/react-query";
 import { routeTree } from "./routeTree.gen";
+
+// Auto-recuperação de erro de chunk: quando o Vite faz rebuild e o navegador
+// ainda referencia chunks antigos, o import dinâmico falha e a navegação
+// trava em "loading". Recarregamos a página uma única vez (com guarda em
+// sessionStorage) para resolver isso silenciosamente.
+if (typeof window !== "undefined") {
+  const RELOAD_FLAG = "__reloaded_for_chunk";
+
+  const handleChunkError = () => {
+    if (!sessionStorage.getItem(RELOAD_FLAG)) {
+      sessionStorage.setItem(RELOAD_FLAG, "1");
+      window.location.reload();
+    }
+  };
+
+  window.addEventListener("vite:preloadError", handleChunkError);
+  window.addEventListener("error", (e) => {
+    const msg = e?.message ?? "";
+    if (
+      msg.includes("Failed to fetch dynamically imported module") ||
+      msg.includes("Importing a module script failed")
+    ) {
+      handleChunkError();
+    }
+  });
+
+  // Após carregar com sucesso, limpa o flag para permitir nova auto-recuperação
+  // em um futuro deploy/rebuild.
+  window.addEventListener("load", () => {
+    setTimeout(() => sessionStorage.removeItem(RELOAD_FLAG), 2000);
+  });
+}
 
 function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
+
+  // Detecta erro de chunk em runtime e tenta auto-recuperação
+  if (
+    typeof window !== "undefined" &&
+    (error?.message?.includes("Failed to fetch dynamically imported module") ||
+      error?.message?.includes("Importing a module script failed"))
+  ) {
+    if (!sessionStorage.getItem("__reloaded_for_chunk")) {
+      sessionStorage.setItem("__reloaded_for_chunk", "1");
+      window.location.reload();
+    }
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -55,13 +100,32 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
 }
 
 export const getRouter = () => {
+  // QueryClient criado por requisição (evita vazamento de cache entre
+  // requisições SSR). Defaults conservadores: cache de 30s, gc 5min.
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 30_000,
+        gcTime: 5 * 60_000,
+        refetchOnWindowFocus: false,
+        retry: 1,
+      },
+    },
+  });
+
   const router = createRouter({
     routeTree,
-    context: {},
+    context: { queryClient },
     scrollRestoration: true,
-    defaultPreloadStaleTime: 0,
+    defaultPreloadStaleTime: 0, // deixa o React Query controlar freshness
     defaultErrorComponent: DefaultErrorComponent,
   });
 
   return router;
 };
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: ReturnType<typeof getRouter>;
+  }
+}

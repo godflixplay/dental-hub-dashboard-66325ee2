@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { MessageSquare, Upload, Save, ImageIcon, Trash2 } from "lucide-react";
@@ -30,67 +31,63 @@ interface ConfigMensagem {
 
 export function MensagemTab() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const userId = user?.id;
   const fileRef = useRef<HTMLInputElement>(null);
-  const [config, setConfig] = useState<ConfigMensagem | null>(null);
   const [mensagem, setMensagem] = useState(DEFAULT_MENSAGEM_ANIVERSARIO);
   const [imagemUrl, setImagemUrl] = useState<string | null>(null);
   const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Garante que o sync com a query só roda 1× por payload novo do servidor.
+  const lastSyncedIdRef = useRef<string | null>(null);
 
-  const fetchConfig = useCallback(async () => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    try {
+  const configQuery = useQuery({
+    queryKey: ["aniv:config:full", userId],
+    enabled: !!userId,
+    queryFn: async () => {
       const { data, error } = await withRequestTimeout(
         supabase
           .from("config_mensagem")
           .select("id, mensagem, imagem_url")
-          .eq("user_id", user.id)
+          .eq("user_id", userId!)
           .maybeSingle(),
         "O carregamento da configuração da mensagem",
       );
+      if (error) throw error;
+      return (data as ConfigMensagem | null) ?? null;
+    },
+  });
 
-      if (error) {
-        throw error;
-      }
+  const config = configQuery.data ?? null;
 
-      if (data) {
-        const c = data as ConfigMensagem;
-        setConfig(c);
-        setMensagem(c.mensagem);
-        setImagemUrl(c.imagem_url);
-      } else {
-        setConfig(null);
-        setMensagem(DEFAULT_MENSAGEM_ANIVERSARIO);
-        setImagemUrl(null);
-      }
-    } catch (error) {
-      console.error("[MensagemTab] erro ao carregar configuração", error);
-      setConfig(null);
+  // Sincroniza o estado local com a config carregada (apenas quando muda
+  // o registro que veio do servidor — não a cada render).
+  useEffect(() => {
+    if (configQuery.isLoading) return;
+    const key = config?.id ?? "__none__";
+    if (lastSyncedIdRef.current === key) return;
+    lastSyncedIdRef.current = key;
+
+    if (config) {
+      setMensagem(config.mensagem);
+      setImagemUrl(config.imagem_url);
+    } else {
       setMensagem(DEFAULT_MENSAGEM_ANIVERSARIO);
       setImagemUrl(null);
-      toast.error(getAniversariosErrorMessage(error));
-    } finally {
-      setPendingFile(null);
-      setLocalPreviewUrl((current) => {
-        if (current?.startsWith("blob:")) {
-          URL.revokeObjectURL(current);
-        }
-        return null;
-      });
-      setLoading(false);
     }
-  }, [user]);
+    setPendingFile(null);
+    setLocalPreviewUrl((current) => {
+      if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
+      return null;
+    });
+  }, [config, configQuery.isLoading]);
 
   useEffect(() => {
-    fetchConfig();
-  }, [fetchConfig]);
+    if (configQuery.error) {
+      toast.error(getAniversariosErrorMessage(configQuery.error));
+    }
+  }, [configQuery.error]);
 
   useEffect(() => {
     return () => {
@@ -114,17 +111,13 @@ export function MensagemTab() {
     }
 
     setLocalPreviewUrl((current) => {
-      if (current?.startsWith("blob:")) {
-        URL.revokeObjectURL(current);
-      }
+      if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
       return URL.createObjectURL(file);
     });
     setPendingFile(file);
     toast.success("Imagem selecionada! Clique em Salvar para confirmar.");
 
-    if (fileRef.current) {
-      fileRef.current.value = "";
-    }
+    if (fileRef.current) fileRef.current.value = "";
   };
 
   const uploadPendingFile = async () => {
@@ -148,9 +141,7 @@ export function MensagemTab() {
 
   const handleRemoveImage = () => {
     setLocalPreviewUrl((current) => {
-      if (current?.startsWith("blob:")) {
-        URL.revokeObjectURL(current);
-      }
+      if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
       return null;
     });
     setPendingFile(null);
@@ -170,7 +161,7 @@ export function MensagemTab() {
       if (pendingFile) {
         try {
           nextImagemUrl = await uploadPendingFile();
-        } catch (error) {
+        } catch {
           toast.warning(
             "A mensagem será salva sem trocar a imagem porque o upload falhou.",
           );
@@ -183,7 +174,7 @@ export function MensagemTab() {
         imagem_url: nextImagemUrl,
         updated_at: new Date().toISOString(),
       };
-      const { data, error } = await withRequestTimeout(
+      const { error } = await withRequestTimeout(
         supabase
           .from("config_mensagem")
           .upsert(payload, { onConflict: "user_id" })
@@ -193,15 +184,18 @@ export function MensagemTab() {
       );
       if (error) throw error;
 
-      const savedConfig = data as ConfigMensagem;
-      setConfig(savedConfig);
-      setMensagem(savedConfig.mensagem);
-      setImagemUrl(savedConfig.imagem_url);
+      // Reseta a flag para forçar re-sync com o novo dado vindo do servidor.
+      lastSyncedIdRef.current = null;
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:config:full", userId],
+      });
+      // Também invalida a query usada pela aba Envio para manter consistência.
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:config", userId],
+      });
       setPendingFile(null);
       setLocalPreviewUrl((current) => {
-        if (current?.startsWith("blob:")) {
-          URL.revokeObjectURL(current);
-        }
+        if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
         return null;
       });
       toast.success("Mensagem salva!");
@@ -213,7 +207,7 @@ export function MensagemTab() {
     }
   };
 
-  if (loading) {
+  if (configQuery.isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -294,7 +288,6 @@ export function MensagemTab() {
         </CardContent>
       </Card>
 
-      {/* Preview WhatsApp */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Preview</CardTitle>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -73,6 +74,8 @@ function buildInstanceName(userId: string): string {
 
 export function WhatsAppTab() {
   const { user, session } = useAuth();
+  const queryClient = useQueryClient();
+  const userId = user?.id;
   const [instance, setInstance] = useState<Instance | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -85,6 +88,27 @@ export function WhatsAppTab() {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollStartedAtRef = useRef<number>(0);
   const pollErrorsRef = useRef<number>(0);
+  // Garante que bootstrapConnection só roda 1× por instância carregada do
+  // cache. Voltar à aba dentro do staleTime NÃO refaz QR / polling.
+  const bootstrappedForRef = useRef<string | null>(null);
+
+  // Carrega a instância via useQuery (cache de 30s entre navegações).
+  const instanceQuery = useQuery({
+    queryKey: ["aniv:wpp:instance", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await withRequestTimeout(
+        supabase
+          .from("whatsapp_instances")
+          .select("*")
+          .eq("user_id", userId!)
+          .maybeSingle(),
+        "O carregamento da instância do WhatsApp",
+      );
+      if (error) throw error;
+      return ((data as Instance) ?? null);
+    },
+  });
 
   const getAccessToken = useCallback(async () => {
     const {
@@ -132,12 +156,19 @@ export function WhatsAppTab() {
             .update({ status: "connected" })
             .eq("id", instanceRow.id);
           setInstance({ ...instanceRow, status: "connected" });
+          // Mantém o cache do React Query alinhado com o status real.
+          void queryClient.invalidateQueries({
+            queryKey: ["aniv:wpp:instance", userId],
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ["aniv:instance", userId],
+          });
         } catch {
           // não bloqueia UI por falha de update
         }
       }
     },
-    [stopPolling],
+    [stopPolling, queryClient, userId],
   );
 
   const fetchQrAndShow = useCallback(
@@ -229,41 +260,39 @@ export function WhatsAppTab() {
     [markConnected, stopPolling],
   );
 
+  // Bootstrap usa a instância cacheada pelo useQuery — sem refetch SQL
+  // toda vez que a aba remonta. Só dispara verificação de status/QR uma vez
+  // por instância (`bootstrappedForRef`).
   const bootstrapConnection = useCallback(async () => {
     if (!user) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+
+    // Aguarda o useQuery terminar a primeira carga
+    if (instanceQuery.isLoading) return;
+
     setQrError(null);
-    resetSteps();
 
     try {
-      const accessToken = await getAccessToken();
-
-      // [1] Verifica se já existe instância
-      const { data: existing, error: selectError } = await withRequestTimeout(
-        supabase
-          .from("whatsapp_instances")
-          .select("*")
-          .eq("user_id", user.id)
-          .maybeSingle(),
-        "O carregamento da instância do WhatsApp",
-      );
-      if (selectError) throw selectError;
-
-      const existingInstance = (existing as Instance) ?? null;
+      const existingInstance = instanceQuery.data ?? null;
       setInstance(existingInstance);
 
       if (!existingInstance) {
-        // Sem instância → mostrar botão "Conectar WhatsApp"
+        resetSteps();
         return;
       }
 
-      // [2] Existe → consulta status SEM recriar
+      // Já rodou bootstrap para esta instância nesta sessão? Não refaz QR.
+      const key = `${existingInstance.id}:${existingInstance.status}`;
+      if (bootstrappedForRef.current === key) return;
+      bootstrappedForRef.current = key;
+
+      resetSteps();
       updateStep("create", "done");
       updateStep("save", "done");
 
+      const accessToken = await getAccessToken();
       const statusResult = await withRequestTimeout(
         getInstanceStatus({
           data: {
@@ -288,7 +317,6 @@ export function WhatsAppTab() {
         return;
       }
 
-      // [3] Não conectado → busca QR direto (não recria instância)
       const qrOutcome = await fetchQrAndShow(
         existingInstance.instance_name,
         accessToken,
@@ -305,11 +333,18 @@ export function WhatsAppTab() {
     }
   }, [
     user,
+    instanceQuery.isLoading,
+    instanceQuery.data,
     getAccessToken,
     fetchQrAndShow,
     markConnected,
     startPolling,
   ]);
+
+  useEffect(() => {
+    // Quando o useQuery termina, rebaixa o `loading` local (mesmo sem instância).
+    if (!instanceQuery.isLoading) setLoading(false);
+  }, [instanceQuery.isLoading]);
 
   useEffect(() => {
     bootstrapConnection();
@@ -354,8 +389,15 @@ export function WhatsAppTab() {
       updateStep("create", "done");
       updateStep("save", "done");
 
-      // Recarrega a linha recém-criada e segue o fluxo normal de status/QR
-      await bootstrapConnection();
+      // Limpa o ref para permitir novo bootstrap com a instância recém-criada
+      bootstrappedForRef.current = null;
+      // Invalida cache para forçar refetch da nova instância no useQuery
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:wpp:instance", userId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:instance", userId],
+      });
     } catch (error) {
       setQrError(getAniversariosErrorMessage(error));
       toast.error(getAniversariosErrorMessage(error));
@@ -392,6 +434,9 @@ export function WhatsAppTab() {
           .update({ status: "disconnected" })
           .eq("id", instance.id);
         setInstance({ ...instance, status: "disconnected" });
+        void queryClient.invalidateQueries({
+          queryKey: ["aniv:wpp:instance", userId],
+        });
       }
     } catch (error) {
       toast.error(getAniversariosErrorMessage(error));
