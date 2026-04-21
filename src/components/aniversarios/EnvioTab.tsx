@@ -483,6 +483,12 @@ export function EnvioTab() {
             <History className="h-4 w-4" />
             Últimos Envios
           </CardTitle>
+          <CardDescription>
+            <strong>Pendente</strong> = aceito pela Evolution API, aguardando
+            entrega final no WhatsApp do destinatário.{" "}
+            <strong>Erro</strong> = a Evolution rejeitou o envio (passe o mouse
+            no ⓘ para ver o motivo).
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {envios.length === 0 ? (
