@@ -120,6 +120,7 @@ export function ContatosTab() {
           const norm = normalizePhoneBR(telefone.toString());
           return {
             user_id: user.id,
+            instancia_id: instanciaId,
             nome: nome.trim(),
             telefone: norm.valid ? norm.phone : "",
             data_nascimento: parseDate(nascimento) || null,
@@ -185,6 +186,16 @@ export function ContatosTab() {
 
   const handleSave = async () => {
     if (!user || !form.nome || !form.telefone) return;
+    if (!form.data_nascimento) {
+      toast.error("Data de nascimento é obrigatória.");
+      return;
+    }
+    if (!instanciaId) {
+      toast.error(
+        "Conecte uma instância do WhatsApp antes de cadastrar contatos.",
+      );
+      return;
+    }
     const norm = normalizePhoneBR(form.telefone);
     if (!norm.valid) {
       toast.error(
@@ -196,7 +207,8 @@ export function ContatosTab() {
     const payload = {
       nome: form.nome.trim(),
       telefone: norm.phone,
-      data_nascimento: form.data_nascimento || null,
+      data_nascimento: form.data_nascimento,
+      instancia_id: instanciaId,
       user_id: user.id,
     };
 
