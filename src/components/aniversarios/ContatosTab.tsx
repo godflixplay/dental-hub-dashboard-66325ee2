@@ -35,6 +35,7 @@ interface Contato {
   nome: string;
   telefone: string;
   data_nascimento: string | null;
+  instancia_id: string | null;
   created_at: string;
 }
 
@@ -47,6 +48,7 @@ export function ContatosTab() {
   const [addOpen, setAddOpen] = useState(false);
   const [editContato, setEditContato] = useState<Contato | null>(null);
   const [form, setForm] = useState({ nome: "", telefone: "", data_nascimento: "" });
+  const [instanciaId, setInstanciaId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fetchContatos = async () => {
@@ -66,9 +68,20 @@ export function ContatosTab() {
     }
   };
 
+  const fetchInstancia = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("whatsapp_instances")
+      .select("id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    setInstanciaId((data as { id: string } | null)?.id ?? null);
+  };
+
   useEffect(() => {
     fetchContatos();
-  }, []);
+    fetchInstancia();
+  }, [user?.id]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -107,6 +120,7 @@ export function ContatosTab() {
           const norm = normalizePhoneBR(telefone.toString());
           return {
             user_id: user.id,
+            instancia_id: instanciaId,
             nome: nome.trim(),
             telefone: norm.valid ? norm.phone : "",
             data_nascimento: parseDate(nascimento) || null,
@@ -172,6 +186,16 @@ export function ContatosTab() {
 
   const handleSave = async () => {
     if (!user || !form.nome || !form.telefone) return;
+    if (!form.data_nascimento) {
+      toast.error("Data de nascimento é obrigatória.");
+      return;
+    }
+    if (!instanciaId) {
+      toast.error(
+        "Conecte uma instância do WhatsApp antes de cadastrar contatos.",
+      );
+      return;
+    }
     const norm = normalizePhoneBR(form.telefone);
     if (!norm.valid) {
       toast.error(
@@ -183,7 +207,8 @@ export function ContatosTab() {
     const payload = {
       nome: form.nome.trim(),
       telefone: norm.phone,
-      data_nascimento: form.data_nascimento || null,
+      data_nascimento: form.data_nascimento,
+      instancia_id: instanciaId,
       user_id: user.id,
     };
 
@@ -276,7 +301,14 @@ export function ContatosTab() {
         </div>
       </div>
 
-      <Badge variant="secondary">{contatos.length} contatos</Badge>
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="secondary">{contatos.length} contatos</Badge>
+        {!instanciaId && (
+          <Badge variant="destructive">
+            Conecte o WhatsApp para vincular novos contatos a uma instância.
+          </Badge>
+        )}
+      </div>
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
