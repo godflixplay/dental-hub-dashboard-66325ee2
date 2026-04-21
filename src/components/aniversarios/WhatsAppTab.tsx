@@ -63,7 +63,13 @@ const POLL_INTERVAL_MS = 5000;
 const POLL_MAX_DURATION_MS = 2 * 60 * 1000; // 2 minutos
 const POLL_MAX_CONSECUTIVE_ERRORS = 3;
 
-const INSTANCE_NAME_FIXED = "DentalHubTeste";
+// Gera um nome de instância exclusivo e estável por usuário.
+// Formato: dentalhub-{userIdSemHifens(primeiros 16 chars)}
+// Compatível com o regex aceito por createInstance: ^[a-zA-Z0-9_-]+$
+function buildInstanceName(userId: string): string {
+  const safe = userId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 16);
+  return `dentalhub-${safe}`;
+}
 
 export function WhatsAppTab() {
   const { user, session } = useAuth();
