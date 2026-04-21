@@ -242,12 +242,28 @@ export function MensagemTab() {
       let nextImagemUrl = imagemUrl;
 
       if (pendingFile) {
+        // Se o usuário escolheu trocar a imagem, o upload é OBRIGATÓRIO.
+        // Falha no upload ABORTA o save — nunca gravamos imagem_url null/antigo
+        // quando o intent do usuário era trocar a imagem.
         try {
           nextImagemUrl = await uploadPendingFile();
-        } catch {
-          toast.warning(
-            "A mensagem será salva sem trocar a imagem porque o upload falhou.",
+        } catch (uploadErr) {
+          console.error(
+            "[MensagemTab] upload falhou, abortando save",
+            uploadErr,
           );
+          toast.error(
+            getAniversariosErrorMessage(uploadErr) ||
+              "Falha ao enviar a imagem. Tente novamente.",
+          );
+          setSaving(false);
+          return;
+        }
+
+        if (!nextImagemUrl) {
+          toast.error("Não foi possível obter a URL pública da imagem.");
+          setSaving(false);
+          return;
         }
       }
 
@@ -286,12 +302,15 @@ export function MensagemTab() {
         }
       }
 
+      // Atualiza state local imediatamente (não espera refetch)
+      // para a UI refletir a nova URL sem depender de cache.
+      setImagemUrl(nextImagemUrl);
+
       // Reseta a flag para forçar re-sync com o novo dado vindo do servidor.
       lastSyncedIdRef.current = null;
       await queryClient.invalidateQueries({
         queryKey: ["aniv:config:full", userId],
       });
-      // Também invalida a query usada pela aba Envio para manter consistência.
       await queryClient.invalidateQueries({
         queryKey: ["aniv:config", userId],
       });
