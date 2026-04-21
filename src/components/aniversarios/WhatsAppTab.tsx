@@ -317,9 +317,10 @@ export function WhatsAppTab() {
 
     try {
       updateStep("create", "active");
+      const instanceName = buildInstanceName(user.id);
       const result = await createInstance({
         data: {
-          instanceName: INSTANCE_NAME_FIXED,
+          instanceName,
           accessToken: session.access_token,
         },
       });
