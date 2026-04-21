@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Upload, Trash2, Search, Plus } from "lucide-react";
@@ -41,47 +42,52 @@ interface Contato {
 
 export function ContatosTab() {
   const { user } = useAuth();
-  const [contatos, setContatos] = useState<Contato[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const userId = user?.id;
   const [search, setSearch] = useState("");
   const [uploading, setUploading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editContato, setEditContato] = useState<Contato | null>(null);
   const [form, setForm] = useState({ nome: "", telefone: "", data_nascimento: "" });
-  const [instanciaId, setInstanciaId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const fetchContatos = async () => {
-    setLoading(true);
-    try {
+  const contatosQuery = useQuery({
+    queryKey: ["aniv:contatos:full", userId],
+    enabled: !!userId,
+    queryFn: async () => {
       const { data, error } = await withRequestTimeout(
         supabase.from("contatos").select("*").order("nome", { ascending: true }),
         "O carregamento dos contatos",
       );
       if (error) throw error;
-      setContatos((data as Contato[]) ?? []);
-    } catch (error) {
-      toast.error(getAniversariosErrorMessage(error));
-      setContatos([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return (data as Contato[]) ?? [];
+    },
+  });
 
-  const fetchInstancia = async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from("whatsapp_instances")
-      .select("id")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    setInstanciaId((data as { id: string } | null)?.id ?? null);
-  };
+  const instanciaQuery = useQuery({
+    queryKey: ["aniv:instance:id", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("whatsapp_instances")
+        .select("id")
+        .eq("user_id", userId!)
+        .maybeSingle();
+      return ((data as { id: string } | null)?.id) ?? null;
+    },
+  });
 
-  useEffect(() => {
-    fetchContatos();
-    fetchInstancia();
-  }, [user?.id]);
+  const contatos = contatosQuery.data ?? [];
+  const instanciaId = instanciaQuery.data ?? null;
+  const loading = contatosQuery.isLoading;
+
+  const refetchContatos = () =>
+    queryClient.invalidateQueries({ queryKey: ["aniv:contatos:full", userId] });
+
+  if (contatosQuery.isError) {
+    // Mostra erro ao usuário sem quebrar a UI; o array vazio renderiza normalmente.
+    console.warn("[ContatosTab] erro ao carregar", contatosQuery.error);
+  }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -154,7 +160,7 @@ export function ContatosTab() {
             ? `${mapped.length} contatos importados, ${rejected} rejeitados por número inválido.`
             : `${mapped.length} contatos importados!`,
         );
-        fetchContatos();
+        await refetchContatos();
       }
     } catch {
       toast.error("Erro ao ler o arquivo");
@@ -166,16 +172,13 @@ export function ContatosTab() {
 
   const parseDate = (value: string): string | null => {
     if (!value) return null;
-    // Try DD/MM/YYYY
     const brMatch = value.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
     if (brMatch) {
       const [, d, m, y] = brMatch;
       return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
     }
-    // Try YYYY-MM-DD
     const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-    // Try Excel serial number
     const num = Number(value);
     if (!isNaN(num) && num > 1000 && num < 100000) {
       const date = new Date((num - 25569) * 86400 * 1000);
@@ -212,26 +215,26 @@ export function ContatosTab() {
       user_id: user.id,
     };
 
-    if (editContato) {
-      const { error } = await supabase
-        .from("contatos")
-        .update(payload)
-        .eq("id", editContato.id);
-      if (error) toast.error(error.message);
-      else {
+    try {
+      if (editContato) {
+        const { error } = await supabase
+          .from("contatos")
+          .update(payload)
+          .eq("id", editContato.id);
+        if (error) throw error;
         toast.success("Contato atualizado");
         setEditContato(null);
-      }
-    } else {
-      const { error } = await supabase.from("contatos").insert(payload);
-      if (error) toast.error(error.message);
-      else {
+      } else {
+        const { error } = await supabase.from("contatos").insert(payload);
+        if (error) throw error;
         toast.success("Contato adicionado");
         setAddOpen(false);
       }
+      setForm({ nome: "", telefone: "", data_nascimento: "" });
+      await refetchContatos();
+    } catch (err) {
+      toast.error(getAniversariosErrorMessage(err));
     }
-    setForm({ nome: "", telefone: "", data_nascimento: "" });
-    fetchContatos();
   };
 
   const handleDelete = async (id: string) => {
@@ -239,7 +242,7 @@ export function ContatosTab() {
     if (error) toast.error(error.message);
     else {
       toast.success("Contato removido");
-      fetchContatos();
+      await refetchContatos();
     }
   };
 
@@ -367,7 +370,6 @@ export function ContatosTab() {
         </Card>
       )}
 
-      {/* Add / Edit Dialog */}
       <Dialog
         open={addOpen || !!editContato}
         onOpenChange={() => {
