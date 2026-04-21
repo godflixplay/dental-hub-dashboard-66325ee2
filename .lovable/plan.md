@@ -1,145 +1,99 @@
 
 
-## Plano: corrigir envio com imagem, instância errada, status enganoso e erro ao voltar para a aba
+## Plano: estabilizar navegação e eliminar travas ao trocar de página
 
-### O que está realmente errado
+### O que está realmente acontecendo (diagnóstico)
 
-1. **A imagem nunca é enviada**
-   - Hoje a aba Mensagem salva `imagem_url`, mas a aba Envio chama apenas `sendTextMessage`.
-   - Resultado: o sistema sempre envia só texto.
+Reproduzi o problema lendo o código e a tela travada que você mostrou. São **quatro causas independentes** somadas — por isso parece aleatório e demorado:
 
-2. **As mensagens estão saindo da instância errada**
-   - `WhatsAppTab.tsx` usa um nome fixo de instância: `DentalHubTeste`.
-   - Isso faz usuários diferentes reutilizarem a mesma instância da Evolution.
-   - Como a instância conectada está no número `21981089100`, a mensagem aparece nessa conversa, não no destinatário esperado.
-
-3. **`pendente` não significa entregue**
-   - A própria documentação da Evolution mostra retorno `status: "PENDING"` logo após `sendText` e `sendMedia`.
-   - Isso significa “aceita pela API”, não “chegou no WhatsApp do destinatário”.
-   - O sistema hoje grava esse retorno como se fosse um estado final, o que confunde.
-
-4. **A aba Envio quebra ao voltar**
-   - `fetchAll` usa um `Promise.all` único com timeout geral.
-   - Se qualquer consulta demorar, especialmente a parte da Evolution, a aba inteira falha com erro de carregamento.
-   - Além disso, o status real da instância está sendo conciliado de forma frágil.
-
-### Mudanças por arquivo
-
-**`src/components/aniversarios/WhatsAppTab.tsx`**
-- Remover `INSTANCE_NAME_FIXED = "DentalHubTeste"`.
-- Gerar um `instance_name` único por usuário, estável e previsível, por exemplo baseado no `user.id`.
-- Ao abrir a aba:
-  - buscar a instância do usuário no banco;
-  - se existir, usar **somente** essa instância;
-  - se não existir, criar uma nova instância exclusiva do usuário.
-- Ao detectar que a instância salva pertence ao usuário atual, nunca reutilizar instância compartilhada.
-- Melhorar estados finais da tela: `conectado`, `aguardando QR`, `erro`, sem loading preso.
-
-**`src/utils/evolution.functions.ts`**
-- Manter `sendTextMessage`, mas adicionar `sendMediaMessage`.
-- `sendMediaMessage` chama `/message/sendMedia/{instance}` usando:
-  - `number`
-  - `caption`
-  - `media`
-  - `mimetype`
-  - `mediatype`
-  - `fileName`
-- Retornar também `providerStatus`, `messageId` e `remoteJid` quando vierem na resposta.
-- Em `createInstance`, continuar tratando “already in use”, mas agora com nome único por usuário.
-- Melhorar parsing das respostas da Evolution para logs e diagnóstico.
-
-**`src/components/aniversarios/EnvioTab.tsx`**
-- Se `config.imagem_url` existir, enviar com `sendMediaMessage`; senão, usar `sendTextMessage`.
-- Antes do envio:
-  - validar número com `normalizePhoneBR`;
-  - checar status real da instância com a Evolution, sem depender só do banco.
-- Separar o carregamento inicial em etapas:
-  - carregar Supabase primeiro;
-  - verificar status da Evolution depois, sem derrubar a aba inteira se a Evolution estiver lenta.
-- Evitar que um timeout da Evolution impeça a renderização dos contatos, histórico e configuração.
-- Ajustar o histórico:
-  - manter `pendente` como “aceita pela Evolution, entrega final não confirmada”;
-  - mostrar tooltip/texto mais claro;
-  - exibir se o envio foi `texto` ou `imagem + legenda`.
-- Quando houver erro real da Evolution, registrar erro detalhado no histórico.
-
-**`src/components/aniversarios/MensagemTab.tsx`**
-- Manter upload/salvamento como origem da imagem.
-- Melhorar feedback visual:
-  - mostrar claramente “imagem salva e pronta para envio”;
-  - diferenciar preview local (`blob:`) de imagem já persistida (`imagem_url`).
-- Garantir que remover imagem limpe corretamente o estado salvo e o preview.
-
-**`src/components/aniversarios/request-utils.ts`**
-- Manter timeout separado para Evolution.
-- Adicionar mensagem específica para timeout da Evolution, sem transformar isso em falha total da aba.
-- Permitir usar timeout customizado por chamada quando necessário.
-
-### Ajuste de arquitetura importante
-
-**Instância exclusiva por usuário**
-- Cada usuário precisa ter sua própria instância na Evolution.
-- O nome da instância deve ser algo como:
-  - `dentalhub-{userIdCurto}`
-  - ou `aniv-{user.id}`
-- Isso elimina o principal bug atual: mensagens saindo do WhatsApp de outra pessoa.
-
-### Como o comportamento vai ficar
-
-```text
-Usuário abre aba WhatsApp
-  -> sistema busca a instância dele no banco
-  -> consulta /instance/connectionState/{instance_name}
-  -> se open: conectado
-  -> se não open: gera QR dessa mesma instância
-  -> se não existir instância: cria uma nova exclusiva do usuário
+**1. Erro de chunk antigo após rebuild (causa principal do "spinner por minutos")**
+O erro de runtime atual é:
 ```
-
-```text
-Usuário abre aba Envio
-  -> contatos/config/histórico carregam do Supabase
-  -> status da Evolution é consultado separadamente
-  -> a tela nunca fica travada inteira por causa de uma chamada lenta
+Failed to fetch dynamically imported module: virtual:tanstack-start-client-entry
 ```
+Esse erro acontece quando o sandbox/preview faz hot reload (você editou algo, ou o dev server reiniciou) e o navegador ainda tem em cache uma referência a um chunk JS que não existe mais. O React tenta importar a próxima rota, falha, e como **não existe error boundary capturando esse caso**, a tela fica num spinner para sempre. Só sai disso recarregando a página manualmente. Isso não é problema de Supabase nem de Evolution — é uma quirk de SPAs com code-splitting que precisa ser tratada explicitamente.
 
-```text
-Usuário envia mensagem
-  -> sem imagem: /message/sendText/{instance}
-  -> com imagem: /message/sendMedia/{instance}
-  -> histórico registra aceite da Evolution e detalhes retornados
+**2. Loop de loading no `useAuth` ao remontar**
+Em `src/hooks/use-auth.tsx`, toda vez que o `AuthProvider` monta (e ele está dentro de `__root.tsx`, então monta 1× só — mas o hook executa o efeito sempre que `applySession` muda), o `loading` começa como `true` e só vira `false` depois que `getSession()` retornar. Como `_authenticated.tsx` faz:
+```ts
+if (loading) return <Spinner />;
 ```
+…qualquer atraso de rede do Supabase mostra o spinner global durante todo o intervalo. Pior: cada chamada a `applySession` dispara `fetchRole` (consulta `profiles`), e isso roda **a cada onAuthStateChange** (TOKEN_REFRESHED, SIGNED_IN, INITIAL_SESSION), causando refetches desnecessários.
+
+**3. Refetch completo a cada montagem de aba (e abas remontam ao trocar de rota)**
+`EnvioTab`, `WhatsAppTab`, `ContatosTab`, `MensagemTab` carregam tudo do zero no `useEffect` mount. Quando você sai da página `/dashboard/aniversarios` e volta, **todas as 4 abas remontam e fazem 4–10 requisições cada** (Supabase + Evolution). O timeout do Evolution é 25s. Se a Evolution estiver lenta, a aba fica em "loading" até 25s — isso é o que você descreve como "alguns minutos".
+
+**4. Sem cache compartilhado / sem TanStack Query**
+Não há `QueryClient` no projeto. Cada componente reimplementa fetch+loading+error manualmente, sem deduplicação, sem cache, sem stale-while-revalidate. É por isso que voltar para a tela é tão caro quanto entrar pela primeira vez.
+
+---
+
+### O que vou implementar
+
+**A. Eliminar o "spinner para sempre" após rebuild**
+Em `src/router.tsx`, adicionar handler global para erros de import dinâmico. Quando o Vite faz reload e o chunk some, recarregar a página automaticamente uma única vez (com guarda em sessionStorage para não criar loop):
+```ts
+window.addEventListener("vite:preloadError", () => {
+  if (!sessionStorage.getItem("__reloaded_for_chunk")) {
+    sessionStorage.setItem("__reloaded_for_chunk", "1");
+    window.location.reload();
+  }
+});
+```
+Limpar o flag após carregar com sucesso. Isso mata o "trava por minutos" descrito.
+
+**B. Estabilizar `useAuth` (sem loops, sem reset de loading)**
+- `loading` só vira `true` na primeira chamada; `onAuthStateChange` posteriores não voltam a `loading=true`.
+- `fetchRole` só é chamado quando o `userId` realmente muda (memoizar último id buscado).
+- Não chamar `setRole(null)` durante refresh de token (mantém role atual até confirmar logout).
+
+**C. Adicionar TanStack Query para cache persistente entre navegações**
+- Instalar `@tanstack/react-query`.
+- Criar `QueryClient` dentro de `getRouter()` em `src/router.tsx`, passar via context, prover em `__root.tsx`.
+- Migrar as queries de carregamento (não as mutações nem envios) em:
+  - `EnvioTab` → `useQuery` para contatos, instância, config, envios (chaves separadas por `user.id`).
+  - `WhatsAppTab` → `useQuery` para a instância.
+  - `ContatosTab` → `useQuery` para contatos + instância.
+  - `MensagemTab` → `useQuery` para config.
+- `staleTime: 30_000` para reduzir refetch ao remontar; `gcTime: 5min`.
+- Sincronização de status Evolution permanece em background (fora do Query), mas só roda 1×/montagem real (não a cada toggle de aba).
+
+**D. Reduzir custo do Evolution sync**
+- Em `EnvioTab.fetchAll`, o background sync de status deixa de rodar toda vez que a aba "monta". Passa a rodar **no máximo a cada 60 segundos por usuário** (timestamp em ref/localStorage). Voltar para a aba dentro de 1 minuto não dispara nova chamada.
+- Mantém o timeout existente de 25s, mas como roda em background não trava nada.
+
+**E. Pequenas melhorias de UX**
+- `_authenticated.tsx`: trocar o spinner global por `null` (silencioso) quando `loading` for transição rápida (<200ms) — usar `useState` + `setTimeout` para só mostrar spinner se passar de 200ms. Evita flash branco e reduz a sensação de "tudo travou".
+- `__root.tsx`: adicionar `notFoundComponent` no router config também (já tem no root, mas deixar redundante para garantir).
+
+---
+
+### Arquivos que serão alterados
+
+- `src/router.tsx` — handler `vite:preloadError`, criação do `QueryClient`, `defaultErrorComponent` melhorado.
+- `src/routes/__root.tsx` — `QueryClientProvider` envolvendo o `Outlet`.
+- `src/hooks/use-auth.tsx` — não resetar `loading` em events subsequentes; memoizar `fetchRole`.
+- `src/routes/_authenticated.tsx` — spinner com delay de 200ms.
+- `src/components/aniversarios/EnvioTab.tsx` — migrar para `useQuery`; throttle do sync Evolution.
+- `src/components/aniversarios/WhatsAppTab.tsx` — migrar leitura inicial da instância para `useQuery`.
+- `src/components/aniversarios/ContatosTab.tsx` — `useQuery` para contatos e instância.
+- `src/components/aniversarios/MensagemTab.tsx` — `useQuery` para config.
+- `package.json` — adicionar `@tanstack/react-query`.
+
+Sem mudança de banco. Sem mudança de schema. Sem nova migração.
 
 ### Resultado esperado
 
-- A imagem configurada passa a ser enviada de fato.
-- A mensagem sai da instância correta do usuário, não do número `21981089100`.
-- O destinatário `21969622045` passa a receber na conversa dele.
-- O status `pendente` deixa de parecer bug e passa a ser descrito corretamente como “aceito, aguardando confirmação final”.
-- Ao sair e voltar para a aba, a tela não quebra por timeout geral.
-- O layout continua responsivo nas quatro abas.
+- Trocar de aba ou de página retorna **instantaneamente** (cache de 30s).
+- Spinner global aparece no máximo 200ms — se a sessão já existe, nem aparece.
+- Erro de chunk após rebuild se autorrecupera com 1 reload silencioso (não trava mais).
+- Sync de status Evolution acontece no máximo 1×/min, sempre em background.
+- Sessão WhatsApp permanece (isso já funcionava — a "desconexão" percebida era na verdade o spinner travado).
 
-### Detalhes técnicos
+### Validação
 
-- A causa mais grave é o nome fixo `DentalHubTeste`, que cria compartilhamento indevido de instância.
-- `sendMedia` é obrigatório para suportar `imagem_url`; salvar imagem no banco sozinho não envia mídia.
-- O `status: "PENDING"` é comportamento esperado da Evolution no retorno inicial; não deve ser tratado como confirmação de entrega.
-- Para confirmação real de entrega no futuro, o ideal é salvar `messageId/providerStatus` e integrar webhook/status callback da Evolution.
-
-### Arquivos a editar
-
-- `src/components/aniversarios/WhatsAppTab.tsx`
-- `src/components/aniversarios/EnvioTab.tsx`
-- `src/components/aniversarios/MensagemTab.tsx`
-- `src/components/aniversarios/request-utils.ts`
-- `src/utils/evolution.functions.ts`
-
-### Validação após implementar
-
-1. Conectar um usuário novo e confirmar que a instância criada tem nome exclusivo.
-2. Salvar mensagem com imagem e verificar preview persistido.
-3. Enviar para `21969622045` e confirmar que:
-   - não aparece mais na conversa da instância errada;
-   - usa `sendMedia` quando houver imagem.
-4. Sair da aba e voltar para confirmar que não há erro de carregamento.
-5. Testar em viewport menor para garantir responsividade das abas, badges, cards e histórico.
+1. Login → `/dashboard` → `/dashboard/aniversarios` → `/dashboard` → `/dashboard/aniversarios`: segunda visita deve renderizar em <100ms.
+2. Forçar erro de chunk (simulando rebuild): tela recupera sozinha.
+3. Trocar entre abas WhatsApp/Mensagem/Contatos/Envio: dados persistidos, sem refetch visível.
+4. Deixar a aba aberta 30 minutos, voltar: ainda funciona, sem "deslogar".
 
