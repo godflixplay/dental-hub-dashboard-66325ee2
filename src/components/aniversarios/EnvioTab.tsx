@@ -235,6 +235,33 @@ export function EnvioTab() {
     ]);
   }, [queryClient, userId]);
 
+  // Guarda o último status notificado por id de envio para evitar toasts
+  // duplicados quando o Realtime emite múltiplos eventos para a mesma linha.
+  const notifiedStatusRef = useRef<Map<string, string>>(new Map());
+
+  const notifyFinalStatus = useCallback((envio: Envio) => {
+    const status = (envio.status || "").toLowerCase();
+    const isFinal =
+      status === "enviado" ||
+      status === "erro" ||
+      status === "pendente";
+    if (!isFinal) return;
+    const previous = notifiedStatusRef.current.get(envio.id);
+    if (previous === status) return;
+    notifiedStatusRef.current.set(envio.id, status);
+
+    const alvo = envio.nome?.trim() || envio.telefone || "contato";
+    if (status === "enviado") {
+      toast.success(`Mensagem enviada para ${alvo}.`);
+    } else if (status === "erro") {
+      toast.error(
+        `Falha ao enviar para ${alvo}${envio.erro ? `: ${envio.erro}` : ""}.`,
+      );
+    } else if (status === "pendente") {
+      toast(`Envio para ${alvo} está pendente.`);
+    }
+  }, []);
+
   // Realtime: novos envios aparecem no topo, updates de status atualizam a
   // linha existente, sem duplicar registros. Filtra por user_id para
   // garantir isolamento multi-tenant.
@@ -267,6 +294,7 @@ export function EnvioTab() {
             if (prev.some((e) => e.id === novo.id)) return prev;
             return [novo, ...prev].slice(0, 50);
           });
+          notifyFinalStatus(novo);
         },
       )
       .on(
@@ -282,6 +310,7 @@ export function EnvioTab() {
           queryClient.setQueryData<Envio[]>(queryKey, (prev = []) =>
             prev.map((e) => (e.id === atualizado.id ? atualizado : e)),
           );
+          notifyFinalStatus(atualizado);
         },
       )
       .subscribe();
@@ -289,7 +318,20 @@ export function EnvioTab() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [userId, queryClient]);
+  }, [userId, queryClient, notifyFinalStatus]);
+
+  // Marca os envios já carregados na primeira renderização como "já notificados"
+  // para não disparar um toast retroativo para cada linha do histórico.
+  const seededNotifiedRef = useRef(false);
+  useEffect(() => {
+    if (seededNotifiedRef.current) return;
+    if (enviosQuery.isLoading) return;
+    const initial = enviosQuery.data ?? [];
+    initial.forEach((e) => {
+      notifiedStatusRef.current.set(e.id, (e.status || "").toLowerCase());
+    });
+    seededNotifiedRef.current = true;
+  }, [enviosQuery.isLoading, enviosQuery.data]);
 
 
   const loading =
