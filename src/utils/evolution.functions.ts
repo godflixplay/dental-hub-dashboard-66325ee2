@@ -331,11 +331,84 @@ export const getInstanceStatus = createServerFn({ method: "POST" })
           headers: { apikey: key },
         },
       );
-      const body = await res.json();
+      const rawBody = await res.text();
+      const body = parseJsonSafely(rawBody) ?? rawBody;
+      console.log(
+        "[Evolution] connectionState ←",
+        res.status,
+        typeof body === "string" ? body.slice(0, 300) : JSON.stringify(body).slice(0, 300),
+      );
       if (!res.ok) {
-        return { success: false, error: `Error [${res.status}]` };
+        return {
+          success: false,
+          error: `Error [${res.status}]: ${typeof body === "string" ? body : JSON.stringify(body)}`,
+        };
       }
-      return { success: true, data: body };
+      // Extrai o número conectado (ownerJid) — usado para impedir auto-envio
+      let ownerNumber: string | null = null;
+      if (typeof body === "object" && body !== null) {
+        const b = body as {
+          instance?: { owner?: string; ownerJid?: string; wuid?: string };
+          owner?: string;
+          ownerJid?: string;
+          wuid?: string;
+        };
+        const owner =
+          b.instance?.ownerJid ??
+          b.instance?.owner ??
+          b.instance?.wuid ??
+          b.ownerJid ??
+          b.owner ??
+          b.wuid ??
+          null;
+        if (typeof owner === "string") {
+          // ownerJid vem como "5521981089100@s.whatsapp.net"
+          ownerNumber = owner.split("@")[0].replace(/\D/g, "") || null;
+        }
+      }
+      return { success: true, data: body, ownerNumber };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  });
+
+// Força reconexão da Evolution API SEM recriar a instância.
+// Usa o mesmo endpoint que o frontend usa para obter o QR.
+export const reconnectInstance = createServerFn({ method: "POST" })
+  .inputValidator((input: z.infer<typeof statusInstanceNameSchema>) =>
+    statusInstanceNameSchema.parse(input),
+  )
+  .handler(async ({ data }) => {
+    const { url, key } = getEvolutionConfig();
+    try {
+      console.log("[Evolution] reconnect →", `${url}/instance/connect/${data.instanceName}`);
+      const res = await fetch(`${url}/instance/connect/${data.instanceName}`, {
+        method: "GET",
+        headers: { apikey: key },
+      });
+      const rawBody = await res.text();
+      const body = parseJsonSafely(rawBody) ?? rawBody;
+      console.log(
+        "[Evolution] reconnect ←",
+        res.status,
+        typeof body === "string" ? body.slice(0, 300) : JSON.stringify(body).slice(0, 300),
+      );
+      if (!res.ok) {
+        return {
+          success: false,
+          error: `Error [${res.status}]: ${typeof body === "string" ? body : JSON.stringify(body)}`,
+        };
+      }
+      const qrCode = extractQrCode(body);
+      const state =
+        typeof body === "object" && body !== null
+          ? ((body as { instance?: { state?: string }; state?: string }).instance?.state ??
+            (body as { state?: string }).state)
+          : undefined;
+      return { success: true, data: body, base64: qrCode, state };
     } catch (error) {
       return {
         success: false,

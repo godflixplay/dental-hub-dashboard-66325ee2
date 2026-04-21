@@ -5,6 +5,7 @@ import {
   sendTextMessage,
   sendMediaMessage,
   getInstanceStatus,
+  reconnectInstance,
 } from "@/utils/evolution.functions";
 import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
 import { Send, MessageSquare, AlertCircle, History } from "lucide-react";
@@ -67,11 +68,12 @@ interface ConfigMensagem {
 }
 
 export function EnvioTab() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [contatos, setContatos] = useState<Contato[]>([]);
   const [config, setConfig] = useState<ConfigMensagem | null>(null);
   const [instanceName, setInstanceName] = useState<string | null>(null);
   const [instanceStatus, setInstanceStatus] = useState<string>("disconnected");
+  const [ownerNumber, setOwnerNumber] = useState<string | null>(null);
   const [envios, setEnvios] = useState<Envio[]>([]);
   const [selectedContato, setSelectedContato] = useState("");
   const [customPhone, setCustomPhone] = useState("");
@@ -191,12 +193,12 @@ export function EnvioTab() {
       // Etapa 2: sincroniza status real da Evolution em background.
       // NÃO bloqueia render. Erro/timeout aqui não afeta a aba.
       if (resolvedInstanceName) {
-        const instanceName = resolvedInstanceName;
+        const instanceNameLocal = resolvedInstanceName;
         const userId = user.id;
         void (async () => {
           try {
             const statusResult = await withEvolutionTimeout(
-              getInstanceStatus({ data: { instanceName } }),
+              getInstanceStatus({ data: { instanceName: instanceNameLocal } }),
               "A verificação de status do WhatsApp",
             );
             if (!statusResult.success) return;
@@ -206,6 +208,9 @@ export function EnvioTab() {
             const state = body?.instance?.state ?? body?.state;
             const realStatus = state === "open" ? "connected" : "disconnected";
             setInstanceStatus(realStatus);
+            if (statusResult.ownerNumber) {
+              setOwnerNumber(statusResult.ownerNumber);
+            }
             await supabase
               .from("whatsapp_instances")
               .update({ status: realStatus })
@@ -269,6 +274,54 @@ export function EnvioTab() {
     const tipoEnvio = hasImage ? "imagem + legenda" : "texto";
 
     try {
+      // [1] VALIDAÇÃO DE CONEXÃO REAL — checa /instance/connectionState ANTES de enviar
+      const stateCheck = await withEvolutionTimeout(
+        getInstanceStatus({ data: { instanceName } }),
+        "A verificação de status do WhatsApp",
+      );
+
+      if (!stateCheck.success) {
+        toast.error(
+          `Não foi possível verificar o status da instância: ${stateCheck.error ?? "erro desconhecido"}`,
+        );
+        return;
+      }
+
+      const stateBody = stateCheck.data as
+        | { instance?: { state?: string }; state?: string }
+        | undefined;
+      const realState = stateBody?.instance?.state ?? stateBody?.state;
+      const liveOwner = stateCheck.ownerNumber ?? ownerNumber;
+      if (liveOwner) setOwnerNumber(liveOwner);
+
+      if (realState !== "open") {
+        // [5] Sessão inválida → tenta reconectar (NÃO recria instância)
+        setInstanceStatus("disconnected");
+        await supabase
+          .from("whatsapp_instances")
+          .update({ status: "disconnected" })
+          .eq("user_id", user.id);
+        toast.error(
+          "WhatsApp não está conectado. Vá na aba WhatsApp e escaneie o QR Code novamente.",
+        );
+        if (session?.access_token) {
+          // dispara reconexão em background para já gerar QR para o usuário
+          void reconnectInstance({ data: { instanceName } }).catch(() => undefined);
+        }
+        return;
+      }
+
+      setInstanceStatus("connected");
+
+      // [2] BLOQUEIA AUTO-ENVIO — não pode enviar para o próprio número da instância
+      if (liveOwner && liveOwner === phone) {
+        toast.error(
+          `Bloqueado: você está tentando enviar para o próprio número da instância (${liveOwner}). Use outro destinatário.`,
+        );
+        return;
+      }
+
+      // [3] ENVIO via /message/sendText ou /message/sendMedia
       const result = hasImage
         ? await withEvolutionTimeout(
             sendMediaMessage({
@@ -289,12 +342,37 @@ export function EnvioTab() {
             "O envio da mensagem",
           );
 
-      const status = result.success ? "pendente" : "erro";
-      const erro = result.success
-        ? `Envio (${tipoEnvio}) aceito pela Evolution${
-            result.providerStatus ? ` com status ${result.providerStatus}` : ""
-          }. A entrega final no WhatsApp ainda não foi confirmada.`
-        : (result.error ?? "Erro desconhecido");
+      // [6] LOG OBRIGATÓRIO — número, instância, status e resposta completa
+      const fullResponseLog = JSON.stringify(
+        {
+          number: phone,
+          instance_name: instanceName,
+          tipo: tipoEnvio,
+          providerStatus: result.success ? result.providerStatus : undefined,
+          messageId: result.success ? result.messageId : undefined,
+          remoteJid: result.success ? result.remoteJid : undefined,
+          response: result.success ? result.data : undefined,
+          error: result.success ? undefined : result.error,
+        },
+        null,
+        0,
+      ).slice(0, 4000);
+
+      console.log("[EnvioTab] envio completo:", fullResponseLog);
+
+      // [4] FALHA SILENCIOSA — sucesso sem messageId/key.id é tratado como erro
+      let status: "pendente" | "erro";
+      let erro: string;
+      if (!result.success) {
+        status = "erro";
+        erro = `${result.error ?? "Erro desconhecido"} | log: ${fullResponseLog}`;
+      } else if (!result.messageId) {
+        status = "erro";
+        erro = `Evolution retornou sucesso mas sem messageId/key.id (falha silenciosa). Mensagem provavelmente NÃO foi entregue. log: ${fullResponseLog}`;
+      } else {
+        status = "pendente";
+        erro = `Aceito pela Evolution (${tipoEnvio}). messageId=${result.messageId} remoteJid=${result.remoteJid ?? "?"} providerStatus=${result.providerStatus || "?"}. Aguardando confirmação final no WhatsApp. log: ${fullResponseLog}`;
+      }
 
       await withRequestTimeout(
         supabase.from("envios").insert({
@@ -308,7 +386,7 @@ export function EnvioTab() {
         "O registro do histórico de envio",
       );
 
-      if (result.success) {
+      if (status === "pendente") {
         toast.success(
           `Mensagem (${tipoEnvio}) aceita pela Evolution para ${nome}.`,
         );
@@ -316,7 +394,7 @@ export function EnvioTab() {
           "Status 'pendente' = aceita pela API, aguardando entrega final no WhatsApp.",
         );
       } else {
-        toast.error(erro ?? "Erro ao enviar");
+        toast.error(erro.split(" | log:")[0]);
       }
       await fetchAll();
     } catch (err) {
@@ -328,7 +406,7 @@ export function EnvioTab() {
           telefone: phone,
           nome,
           status: "erro",
-          erro: msg,
+          erro: `${msg} | instance=${instanceName} number=${phone}`,
         }),
         "O registro do erro de envio",
       ).catch(() => undefined);
@@ -382,7 +460,14 @@ export function EnvioTab() {
             </div>
           </div>
           <CardDescription>
-            Envie uma mensagem de teste para verificar se tudo está funcionando
+            Envie uma mensagem de teste para verificar se tudo está funcionando.
+            {ownerNumber && (
+              <>
+                {" "}Instância conectada no número{" "}
+                <strong>{ownerNumber}</strong>. Envios para esse mesmo número
+                são bloqueados automaticamente.
+              </>
+            )}
           </CardDescription>
         </CardHeader>
       </Card>
