@@ -219,6 +219,25 @@ export function MensagemTab() {
       );
       if (error) throw error;
 
+      // Espelha a imagem pública também em whatsapp_instances.imagem_url
+      // (cada instância carrega a própria URL — consumida pelo n8n).
+      const instanceId = instanceQuery.data?.id;
+      if (instanceId) {
+        const { error: instanceUpdateError } = await withRequestTimeout(
+          supabase
+            .from("whatsapp_instances")
+            .update({ imagem_url: nextImagemUrl })
+            .eq("id", instanceId),
+          "A atualização da imagem da instância",
+        );
+        if (instanceUpdateError) {
+          console.error(
+            "[MensagemTab] erro ao atualizar imagem_url da instância",
+            instanceUpdateError,
+          );
+        }
+      }
+
       // Reseta a flag para forçar re-sync com o novo dado vindo do servidor.
       lastSyncedIdRef.current = null;
       await queryClient.invalidateQueries({
@@ -227,6 +246,12 @@ export function MensagemTab() {
       // Também invalida a query usada pela aba Envio para manter consistência.
       await queryClient.invalidateQueries({
         queryKey: ["aniv:config", userId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:wpp:instance", userId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:instance", userId],
       });
       setPendingFile(null);
       setLocalPreviewUrl((current) => {
