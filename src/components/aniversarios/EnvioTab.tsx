@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { sendTextMessage } from "@/utils/evolution.functions";
+import { sendTextMessage, getInstanceStatus } from "@/utils/evolution.functions";
+import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
 import { Send, MessageSquare, AlertCircle, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,7 @@ import {
 import {
   getAniversariosErrorMessage,
   withRequestTimeout,
+  withEvolutionTimeout,
 } from "@/components/aniversarios/request-utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
