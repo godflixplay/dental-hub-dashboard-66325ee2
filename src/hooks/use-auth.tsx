@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 
@@ -20,40 +27,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<UserRole | null>(null);
 
-  const fetchRole = async (userId: string) => {
+  const fetchRole = useCallback(async (userId: string) => {
     const { data } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", userId)
       .single();
     setRole((data?.role as UserRole) ?? "cliente");
-  };
+  }, []);
+
+  const applySession = useCallback(
+    (nextSession: Session | null) => {
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+
+      if (nextSession?.user) {
+        void fetchRole(nextSession.user.id);
+      } else {
+        setRole(null);
+      }
+
+      setLoading(false);
+    },
+    [fetchRole],
+  );
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          await fetchRole(session.user.id);
-        } else {
-          setRole(null);
-        }
-        setLoading(false);
-      }
-    );
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      applySession(nextSession);
+    });
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await fetchRole(session.user.id);
-      }
-      setLoading(false);
+    void supabase.auth.getSession().then(({ data: { session: nextSession } }) => {
+      applySession(nextSession);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [applySession]);
 
   const signOut = async () => {
     await supabase.auth.signOut();

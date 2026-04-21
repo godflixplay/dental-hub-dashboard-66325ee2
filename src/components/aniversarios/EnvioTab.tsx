@@ -82,6 +82,19 @@ export function EnvioTab() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const getAccessToken = useCallback(async () => {
+    const {
+      data: { session: liveSession },
+    } = await supabase.auth.getSession();
+    const accessToken = liveSession?.access_token ?? session?.access_token;
+
+    if (!accessToken) {
+      throw new Error("Sem sessão");
+    }
+
+    return accessToken;
+  }, [session?.access_token]);
+
   const fetchAll = useCallback(async () => {
     if (!user) {
       setLoading(false);
@@ -197,8 +210,11 @@ export function EnvioTab() {
         const userId = user.id;
         void (async () => {
           try {
+            const accessToken = await getAccessToken();
             const statusResult = await withEvolutionTimeout(
-              getInstanceStatus({ data: { instanceName: instanceNameLocal } }),
+              getInstanceStatus({
+                data: { instanceName: instanceNameLocal, accessToken },
+              }),
               "A verificação de status do WhatsApp",
             );
             if (!statusResult.success) return;
@@ -226,7 +242,7 @@ export function EnvioTab() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [getAccessToken, user]);
 
   useEffect(() => {
     fetchAll();
@@ -274,9 +290,11 @@ export function EnvioTab() {
     const tipoEnvio = hasImage ? "imagem + legenda" : "texto";
 
     try {
+      const accessToken = await getAccessToken();
+
       // [1] VALIDAÇÃO DE CONEXÃO REAL — checa /instance/connectionState ANTES de enviar
       const stateCheck = await withEvolutionTimeout(
-        getInstanceStatus({ data: { instanceName } }),
+        getInstanceStatus({ data: { instanceName, accessToken } }),
         "A verificação de status do WhatsApp",
       );
 
@@ -304,10 +322,9 @@ export function EnvioTab() {
         toast.error(
           "WhatsApp não está conectado. Vá na aba WhatsApp e escaneie o QR Code novamente.",
         );
-        if (session?.access_token) {
-          // dispara reconexão em background para já gerar QR para o usuário
-          void reconnectInstance({ data: { instanceName } }).catch(() => undefined);
-        }
+        void reconnectInstance({
+          data: { instanceName, accessToken },
+        }).catch(() => undefined);
         return;
       }
 
@@ -327,6 +344,7 @@ export function EnvioTab() {
             sendMediaMessage({
               data: {
                 instanceName,
+                accessToken,
                 phone,
                 caption: finalMessage,
                 mediaUrl: config!.imagem_url!,
@@ -337,7 +355,7 @@ export function EnvioTab() {
           )
         : await withEvolutionTimeout(
             sendTextMessage({
-              data: { instanceName, phone, message: finalMessage },
+              data: { instanceName, accessToken, phone, message: finalMessage },
             }),
             "O envio da mensagem",
           );

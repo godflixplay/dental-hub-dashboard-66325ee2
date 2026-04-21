@@ -11,12 +11,14 @@ const createInstanceSchema = z.object({
 
 const sendMessageSchema = z.object({
   instanceName: z.string().min(1).max(100),
+  accessToken: z.string().min(1),
   phone: z.string().min(10).max(20).regex(/^[0-9]+$/),
   message: z.string().min(1).max(2000),
 });
 
 const sendMediaSchema = z.object({
   instanceName: z.string().min(1).max(100),
+  accessToken: z.string().min(1),
   phone: z.string().min(10).max(20).regex(/^[0-9]+$/),
   caption: z.string().max(2000).optional().default(""),
   mediaUrl: z.string().url().max(2048),
@@ -32,7 +34,27 @@ const instanceNameSchema = z.object({
 
 const statusInstanceNameSchema = z.object({
   instanceName: z.string().min(1).max(100),
+  accessToken: z.string().min(1),
 });
+
+async function getAuthenticatedSupabase(accessToken: string) {
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  });
+
+  const { data: userData, error } = await supabase.auth.getUser();
+
+  if (error || !userData?.user) {
+    throw new Error("Usuário não autenticado");
+  }
+
+  return { supabase, user: userData.user };
+}
 
 function parseJsonSafely(text: string) {
   if (!text) return null;
@@ -101,14 +123,7 @@ function isAlreadyInUseResponse(status: number, payload: unknown) {
 }
 
 async function ensureInstanceExists(instanceName: string, accessToken: string) {
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
-  });
+  const { supabase } = await getAuthenticatedSupabase(accessToken);
 
   const { data, error } = await supabase
     .from("whatsapp_instances")
@@ -183,22 +198,8 @@ export const createInstance = createServerFn({ method: "POST" })
           ? ((body as { instance?: { instanceId?: string } }).instance?.instanceId ?? null)
           : null;
 
-      // Persiste no banco usando o token do usuário (RLS garante isolamento)
-      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: { persistSession: false, autoRefreshToken: false },
-        global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
-      });
-
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError || !userData?.user) {
-        console.error("[Evolution] createInstance: falha ao obter usuário", userError);
-        return {
-          success: false,
-          error: "Não foi possível identificar o usuário autenticado.",
-        };
-      }
-
-      const userId = userData.user.id;
+      const { supabase, user } = await getAuthenticatedSupabase(data.accessToken);
+      const userId = user.id;
       const payload = {
         user_id: userId,
         instance_name: data.instanceName,
@@ -324,6 +325,8 @@ export const getInstanceStatus = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { url, key } = getEvolutionConfig();
     try {
+      await ensureInstanceExists(data.instanceName, data.accessToken);
+
       const res = await fetch(
         `${url}/instance/connectionState/${data.instanceName}`,
         {
@@ -384,6 +387,8 @@ export const reconnectInstance = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { url, key } = getEvolutionConfig();
     try {
+      await ensureInstanceExists(data.instanceName, data.accessToken);
+
       console.log("[Evolution] reconnect →", `${url}/instance/connect/${data.instanceName}`);
       const res = await fetch(`${url}/instance/connect/${data.instanceName}`, {
         method: "GET",
@@ -424,6 +429,8 @@ export const sendTextMessage = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { url, key } = getEvolutionConfig();
     try {
+      await ensureInstanceExists(data.instanceName, data.accessToken);
+
       const res = await fetch(
         `${url}/message/sendText/${data.instanceName}`,
         {
@@ -506,6 +513,8 @@ export const sendMediaMessage = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { url, key } = getEvolutionConfig();
     try {
+      await ensureInstanceExists(data.instanceName, data.accessToken);
+
       const payload = {
         number: data.phone,
         mediatype: data.mediaType,

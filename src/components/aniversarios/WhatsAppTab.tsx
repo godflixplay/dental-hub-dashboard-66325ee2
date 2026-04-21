@@ -86,6 +86,19 @@ export function WhatsAppTab() {
   const pollStartedAtRef = useRef<number>(0);
   const pollErrorsRef = useRef<number>(0);
 
+  const getAccessToken = useCallback(async () => {
+    const {
+      data: { session: liveSession },
+    } = await supabase.auth.getSession();
+    const accessToken = liveSession?.access_token ?? session?.access_token;
+
+    if (!accessToken) {
+      throw new Error("Sem sessão");
+    }
+
+    return accessToken;
+  }, [session?.access_token]);
+
   const updateStep = (key: StepKey, state: StepState) =>
     setSteps((prev) => ({ ...prev, [key]: state }));
 
@@ -160,7 +173,7 @@ export function WhatsAppTab() {
   );
 
   const startPolling = useCallback(
-    (instanceRow: Instance) => {
+    (instanceRow: Instance, accessToken: string) => {
       stopPolling();
       pollStartedAtRef.current = Date.now();
       pollErrorsRef.current = 0;
@@ -178,7 +191,10 @@ export function WhatsAppTab() {
         try {
           const result = await withRequestTimeout(
             getInstanceStatus({
-              data: { instanceName: instanceRow.instance_name },
+              data: {
+                instanceName: instanceRow.instance_name,
+                accessToken,
+              },
             }),
             "A verificação automática de status",
           );
@@ -218,17 +234,13 @@ export function WhatsAppTab() {
       setLoading(false);
       return;
     }
-    if (!session?.access_token) {
-      setLoading(false);
-      setQrError("Sessão inválida. Faça login novamente.");
-      return;
-    }
-
     setLoading(true);
     setQrError(null);
     resetSteps();
 
     try {
+      const accessToken = await getAccessToken();
+
       // [1] Verifica se já existe instância
       const { data: existing, error: selectError } = await withRequestTimeout(
         supabase
@@ -254,7 +266,10 @@ export function WhatsAppTab() {
 
       const statusResult = await withRequestTimeout(
         getInstanceStatus({
-          data: { instanceName: existingInstance.instance_name },
+          data: {
+            instanceName: existingInstance.instance_name,
+            accessToken,
+          },
         }),
         "A verificação de status do WhatsApp",
       );
@@ -276,12 +291,12 @@ export function WhatsAppTab() {
       // [3] Não conectado → busca QR direto (não recria instância)
       const qrOutcome = await fetchQrAndShow(
         existingInstance.instance_name,
-        session.access_token,
+        accessToken,
       );
       if (qrOutcome === "connected") {
         await markConnected(existingInstance);
       } else if (qrOutcome === true) {
-        startPolling(existingInstance);
+        startPolling(existingInstance, accessToken);
       }
     } catch (error) {
       setQrError(getAniversariosErrorMessage(error));
@@ -290,7 +305,7 @@ export function WhatsAppTab() {
     }
   }, [
     user,
-    session?.access_token,
+    getAccessToken,
     fetchQrAndShow,
     markConnected,
     startPolling,
@@ -306,22 +321,18 @@ export function WhatsAppTab() {
   // handleConnect agora cuida APENAS de criar instância nova
   const handleConnect = async () => {
     if (!user) return;
-    if (!session?.access_token) {
-      toast.error("Sessão inválida. Faça login novamente.");
-      return;
-    }
-
     setConnecting(true);
     setQrError(null);
     resetSteps();
 
     try {
+      const accessToken = await getAccessToken();
       updateStep("create", "active");
       const instanceName = buildInstanceName(user.id);
       const result = await createInstance({
         data: {
           instanceName,
-          accessToken: session.access_token,
+          accessToken,
         },
       });
 
@@ -357,9 +368,10 @@ export function WhatsAppTab() {
     if (!instance) return;
     setChecking(true);
     try {
+      const accessToken = await getAccessToken();
       const result = await withRequestTimeout(
         getInstanceStatus({
-          data: { instanceName: instance.instance_name },
+          data: { instanceName: instance.instance_name, accessToken },
         }),
         "A verificação de status do WhatsApp",
       );
