@@ -410,6 +410,142 @@ export function ContatosTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog de Preview da importação */}
+      <Dialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewOpen(false);
+            setPreviewData(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Pré-visualização da Importação</DialogTitle>
+            <DialogDescription>
+              Confira os dados antes de salvar. Apenas linhas válidas serão
+              inseridas. Telefones já existentes serão ignorados automaticamente.
+            </DialogDescription>
+          </DialogHeader>
+
+          {previewData && (
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">Total: {previewData.total}</Badge>
+                <Badge className="bg-emerald-600 hover:bg-emerald-600">
+                  <CheckCircle2 className="mr-1 h-3 w-3" />
+                  Válidos: {previewData.validos.length}
+                </Badge>
+                <Badge variant="destructive">
+                  <AlertCircle className="mr-1 h-3 w-3" />
+                  Inválidos: {previewData.invalidos.length}
+                </Badge>
+              </div>
+
+              {previewData.validos.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">
+                    Válidos (mostrando até 20):
+                  </p>
+                  <Card>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">#</TableHead>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Telefone</TableHead>
+                          <TableHead>Nascimento</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {previewData.validos.slice(0, 20).map((v) => (
+                          <TableRow key={`v-${v.linha}`}>
+                            <TableCell className="text-muted-foreground">
+                              {v.linha}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {v.nome}
+                            </TableCell>
+                            <TableCell>{v.telefone}</TableCell>
+                            <TableCell>
+                              {new Date(
+                                v.data_nascimento + "T12:00:00",
+                              ).toLocaleDateString("pt-BR")}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Card>
+                </div>
+              )}
+
+              {previewData.invalidos.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2 text-destructive">
+                    Inválidos (mostrando até 20):
+                  </p>
+                  <Card>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">Linha</TableHead>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Telefone</TableHead>
+                          <TableHead>Data</TableHead>
+                          <TableHead>Motivo</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {previewData.invalidos.slice(0, 20).map((v) => (
+                          <TableRow key={`i-${v.linha}`}>
+                            <TableCell className="text-muted-foreground">
+                              {v.linha}
+                            </TableCell>
+                            <TableCell>{v.raw.nome || "—"}</TableCell>
+                            <TableCell>{v.raw.telefone || "—"}</TableCell>
+                            <TableCell>
+                              {v.raw.data_nascimento || "—"}
+                            </TableCell>
+                            <TableCell className="text-destructive text-xs">
+                              {v.motivo}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Card>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPreviewOpen(false);
+                setPreviewData(null);
+              }}
+              disabled={importing}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmImport}
+              disabled={
+                importing || !previewData || previewData.validos.length === 0
+              }
+            >
+              {importing
+                ? "Importando..."
+                : `Confirmar e importar ${previewData?.validos.length ?? 0}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
