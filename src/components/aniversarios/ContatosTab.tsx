@@ -463,6 +463,7 @@ export function ContatosTab() {
           if (!open) {
             setPreviewOpen(false);
             setPreviewData(null);
+            setJaCadastradosSet(new Set());
           }
         }}
       >
@@ -470,19 +471,30 @@ export function ContatosTab() {
           <DialogHeader>
             <DialogTitle>Pré-visualização da Importação</DialogTitle>
             <DialogDescription>
-              Confira os dados antes de salvar. Apenas linhas válidas serão
-              inseridas. Contatos com mesmo nome, telefone e data de nascimento
-              já cadastrados serão ignorados.
+              Confira os dados antes de salvar. Contatos com mesmo nome,
+              telefone e data de nascimento já cadastrados serão ignorados.
             </DialogDescription>
           </DialogHeader>
 
-          {previewData && (
+          {previewData && (() => {
+            const validosComStatus = previewData.validos.map((v) => ({
+              ...v,
+              jaCadastrado: jaCadastradosSet.has(
+                dedupKey(v.nome, v.telefone, v.data_nascimento),
+              ),
+            }));
+            const totalJa = validosComStatus.filter((v) => v.jaCadastrado).length;
+            const totalNovos = validosComStatus.length - totalJa;
+            return (
             <div className="space-y-4 max-h-[60vh] overflow-y-auto">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">Total: {previewData.total}</Badge>
                 <Badge className="bg-emerald-600 hover:bg-emerald-600">
                   <CheckCircle2 className="mr-1 h-3 w-3" />
-                  Válidos: {previewData.validos.length}
+                  Novos: {totalNovos}
+                </Badge>
+                <Badge variant="outline">
+                  Já cadastrados: {totalJa}
                 </Badge>
                 <Badge variant="destructive">
                   <AlertCircle className="mr-1 h-3 w-3" />
@@ -490,7 +502,7 @@ export function ContatosTab() {
                 </Badge>
               </div>
 
-              {previewData.validos.length > 0 && (
+              {validosComStatus.length > 0 && (
                 <div>
                   <p className="text-sm font-medium mb-2">
                     Válidos (mostrando até 20):
@@ -503,10 +515,11 @@ export function ContatosTab() {
                           <TableHead>Nome</TableHead>
                           <TableHead>Telefone</TableHead>
                           <TableHead>Nascimento</TableHead>
+                          <TableHead>Status</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {previewData.validos.slice(0, 20).map((v) => (
+                        {validosComStatus.slice(0, 20).map((v) => (
                           <TableRow key={`v-${v.linha}`}>
                             <TableCell className="text-muted-foreground">
                               {v.linha}
@@ -519,6 +532,15 @@ export function ContatosTab() {
                               {new Date(
                                 v.data_nascimento + "T12:00:00",
                               ).toLocaleDateString("pt-BR")}
+                            </TableCell>
+                            <TableCell>
+                              {v.jaCadastrado ? (
+                                <Badge variant="outline">Já cadastrado</Badge>
+                              ) : (
+                                <Badge className="bg-emerald-600 hover:bg-emerald-600">
+                                  Novo
+                                </Badge>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}
