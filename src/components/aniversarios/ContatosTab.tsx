@@ -58,6 +58,7 @@ export function ContatosTab() {
   // Estado de import com preview
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<ParseResult | null>(null);
+  const [jaCadastradosSet, setJaCadastradosSet] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
 
   const contatosQuery = useQuery({
@@ -98,6 +99,13 @@ export function ContatosTab() {
     console.warn("[ContatosTab] erro ao carregar", contatosQuery.error);
   }
 
+  // Chave de duplicidade: nome (normalizado) + telefone (normalizado) + data
+  const dedupKey = (nome: string, telefone: string, data: string | null) => {
+    const norm = normalizePhoneBR(telefone);
+    const tel = norm.valid ? norm.phone : telefone;
+    return `${(nome ?? "").trim().toLowerCase()}|${tel ?? ""}|${data ?? ""}`;
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -117,6 +125,29 @@ export function ContatosTab() {
         toast.error("Planilha vazia.");
         return;
       }
+
+      // Busca contatos do usuário para já marcar status "Já cadastrado" no preview.
+      const { data: existentes, error: errExist } = await supabase
+        .from("contatos")
+        .select("nome, telefone, data_nascimento")
+        .eq("user_id", user.id);
+
+      if (errExist) {
+        toast.error("Erro ao verificar duplicidade: " + errExist.message);
+        return;
+      }
+
+      const set = new Set(
+        (existentes ?? []).map((c) =>
+          dedupKey(
+            c.nome as string,
+            c.telefone as string,
+            c.data_nascimento as string | null,
+          ),
+        ),
+      );
+
+      setJaCadastradosSet(set);
       setPreviewData(result);
       setPreviewOpen(true);
     } catch (err) {
@@ -148,39 +179,14 @@ export function ContatosTab() {
         };
       });
 
-      // Busca contatos já existentes do usuário para checar duplicidade
-      // (nome + telefone + data_nascimento iguais).
-      const { data: existentes, error: errExist } = await supabase
-        .from("contatos")
-        .select("nome, telefone, data_nascimento")
-        .eq("user_id", user.id);
-
-      if (errExist) {
-        toast.error("Erro ao verificar duplicidade: " + errExist.message);
-        return;
-      }
-
-      const chave = (n: string, t: string, d: string | null) =>
-        `${(n ?? "").trim().toLowerCase()}|${t ?? ""}|${d ?? ""}`;
-
-      const existentesSet = new Set(
-        (existentes ?? []).map((c) =>
-          chave(
-            c.nome as string,
-            c.telefone as string,
-            c.data_nascimento as string | null,
-          ),
-        ),
-      );
-
-      // Filtra novos vs já cadastrados; também deduplica dentro do próprio batch.
+      // Filtra novos vs já cadastrados (usa o set capturado no upload + dedup do batch).
       const novos: typeof candidatos = [];
       const lote = new Set<string>();
       let jaCadastrados = 0;
 
       for (const c of candidatos) {
-        const k = chave(c.nome, c.telefone, c.data_nascimento);
-        if (existentesSet.has(k) || lote.has(k)) {
+        const k = dedupKey(c.nome, c.telefone, c.data_nascimento);
+        if (jaCadastradosSet.has(k) || lote.has(k)) {
           jaCadastrados++;
           continue;
         }
@@ -210,6 +216,7 @@ export function ContatosTab() {
 
       setPreviewOpen(false);
       setPreviewData(null);
+      setJaCadastradosSet(new Set());
       await refetchContatos();
     } catch (err) {
       toast.error(getAniversariosErrorMessage(err));
@@ -456,6 +463,7 @@ export function ContatosTab() {
           if (!open) {
             setPreviewOpen(false);
             setPreviewData(null);
+            setJaCadastradosSet(new Set());
           }
         }}
       >
@@ -463,19 +471,30 @@ export function ContatosTab() {
           <DialogHeader>
             <DialogTitle>Pré-visualização da Importação</DialogTitle>
             <DialogDescription>
-              Confira os dados antes de salvar. Apenas linhas válidas serão
-              inseridas. Contatos com mesmo nome, telefone e data de nascimento
-              já cadastrados serão ignorados.
+              Confira os dados antes de salvar. Contatos com mesmo nome,
+              telefone e data de nascimento já cadastrados serão ignorados.
             </DialogDescription>
           </DialogHeader>
 
-          {previewData && (
+          {previewData && (() => {
+            const validosComStatus = previewData.validos.map((v) => ({
+              ...v,
+              jaCadastrado: jaCadastradosSet.has(
+                dedupKey(v.nome, v.telefone, v.data_nascimento),
+              ),
+            }));
+            const totalJa = validosComStatus.filter((v) => v.jaCadastrado).length;
+            const totalNovos = validosComStatus.length - totalJa;
+            return (
             <div className="space-y-4 max-h-[60vh] overflow-y-auto">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">Total: {previewData.total}</Badge>
                 <Badge className="bg-emerald-600 hover:bg-emerald-600">
                   <CheckCircle2 className="mr-1 h-3 w-3" />
-                  Válidos: {previewData.validos.length}
+                  Novos: {totalNovos}
+                </Badge>
+                <Badge variant="outline">
+                  Já cadastrados: {totalJa}
                 </Badge>
                 <Badge variant="destructive">
                   <AlertCircle className="mr-1 h-3 w-3" />
@@ -483,7 +502,7 @@ export function ContatosTab() {
                 </Badge>
               </div>
 
-              {previewData.validos.length > 0 && (
+              {validosComStatus.length > 0 && (
                 <div>
                   <p className="text-sm font-medium mb-2">
                     Válidos (mostrando até 20):
@@ -496,10 +515,11 @@ export function ContatosTab() {
                           <TableHead>Nome</TableHead>
                           <TableHead>Telefone</TableHead>
                           <TableHead>Nascimento</TableHead>
+                          <TableHead>Status</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {previewData.validos.slice(0, 20).map((v) => (
+                        {validosComStatus.slice(0, 20).map((v) => (
                           <TableRow key={`v-${v.linha}`}>
                             <TableCell className="text-muted-foreground">
                               {v.linha}
@@ -512,6 +532,15 @@ export function ContatosTab() {
                               {new Date(
                                 v.data_nascimento + "T12:00:00",
                               ).toLocaleDateString("pt-BR")}
+                            </TableCell>
+                            <TableCell>
+                              {v.jaCadastrado ? (
+                                <Badge variant="outline">Já cadastrado</Badge>
+                              ) : (
+                                <Badge className="bg-emerald-600 hover:bg-emerald-600">
+                                  Novo
+                                </Badge>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -559,7 +588,8 @@ export function ContatosTab() {
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
 
           <DialogFooter>
             <Button
