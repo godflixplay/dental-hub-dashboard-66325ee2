@@ -158,6 +158,17 @@ export const triggerN8nTestWebhook = createServerFn({ method: "POST" })
 
     const { url: apiUrl, key: token } = getEvolutionConfig();
 
+    // Resolve URL do webhook (teste ou produção) com base na config do usuário.
+    const { data: webhookConfig } = await supabase
+      .from("config_webhook")
+      .select("modo")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const { url: webhookUrl, modo: webhookModo } = resolveWebhookUrl(
+      webhookConfig?.modo,
+    );
+
     // Payload final padronizado — nenhum campo obrigatório vai como null/undefined.
     const payload = {
       nome,
@@ -173,7 +184,7 @@ export const triggerN8nTestWebhook = createServerFn({ method: "POST" })
     };
 
     try {
-      const res = await fetch(N8N_TEST_WEBHOOK_URL, {
+      const res = await fetch(webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
