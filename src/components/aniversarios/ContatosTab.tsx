@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { Upload, Trash2, Search, Plus } from "lucide-react";
+import { Upload, Trash2, Search, Plus, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -21,15 +21,19 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
 import {
   getAniversariosErrorMessage,
   withRequestTimeout,
 } from "@/components/aniversarios/request-utils";
 import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
+import {
+  parsePlanilhaFile,
+  type ParseResult,
+} from "@/components/aniversarios/parse-planilha";
 
 interface Contato {
   id: string;
