@@ -605,12 +605,29 @@ export function ContatosTab() {
             <Button
               onClick={handleConfirmImport}
               disabled={
-                importing || !previewData || previewData.validos.length === 0
+                importing ||
+                !previewData ||
+                (previewData.validos.filter(
+                  (v) =>
+                    !jaCadastradosSet.has(
+                      dedupKey(v.nome, v.telefone, v.data_nascimento),
+                    ),
+                ).length === 0)
               }
             >
-              {importing
-                ? "Importando..."
-                : `Confirmar e importar ${previewData?.validos.length ?? 0}`}
+              {(() => {
+                const novos = previewData
+                  ? previewData.validos.filter(
+                      (v) =>
+                        !jaCadastradosSet.has(
+                          dedupKey(v.nome, v.telefone, v.data_nascimento),
+                        ),
+                    ).length
+                  : 0;
+                return importing
+                  ? "Importando..."
+                  : `Confirmar e importar ${novos}`;
+              })()}
             </Button>
           </DialogFooter>
         </DialogContent>
