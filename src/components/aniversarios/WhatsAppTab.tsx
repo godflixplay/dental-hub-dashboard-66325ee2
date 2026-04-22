@@ -6,6 +6,7 @@ import {
   createInstance,
   getQrCode,
   getInstanceStatus,
+  configureInstanceWebhook,
 } from "@/utils/evolution.functions";
 import {
   Smartphone,
