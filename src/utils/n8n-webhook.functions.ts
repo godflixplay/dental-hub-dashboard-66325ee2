@@ -6,6 +6,19 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/integrations/supabase/client"
 
 const N8N_TEST_WEBHOOK_URL =
   "https://n8n.vendavocenegocios.com.br/webhook-test/enviar-teste";
+const N8N_PROD_WEBHOOK_URL =
+  "https://webhook.vendavocenegocios.com.br/webhook/enviar-teste";
+
+function resolveWebhookUrl(modo: string | null | undefined): {
+  url: string;
+  modo: "teste" | "producao";
+} {
+  const normalized = modo === "producao" ? "producao" : "teste";
+  return {
+    url: normalized === "producao" ? N8N_PROD_WEBHOOK_URL : N8N_TEST_WEBHOOK_URL,
+    modo: normalized,
+  };
+}
 
 const triggerSchema = z.object({
   accessToken: z.string().min(1),
