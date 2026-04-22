@@ -184,11 +184,59 @@ export function EnvioTab() {
     },
   });
 
+  const webhookConfigQuery = useQuery({
+    queryKey: ["aniv:webhook-config", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("config_webhook")
+        .select("modo")
+        .eq("user_id", userId!)
+        .maybeSingle();
+      if (error) throw error;
+      return (data?.modo as "teste" | "producao" | undefined) ?? "teste";
+    },
+  });
+
   const contatos = contatosQuery.data ?? [];
   const instanceRow = instanceQuery.data ?? null;
   const config = configQuery.data ?? null;
   const envios = enviosQuery.data ?? [];
   const instanceName = instanceRow?.instance_name ?? null;
+
+  // Sincroniza modo do webhook com o banco quando carrega.
+  useEffect(() => {
+    if (webhookConfigQuery.data) {
+      setWebhookModo(webhookConfigQuery.data);
+    }
+  }, [webhookConfigQuery.data]);
+
+  const handleSaveWebhookModo = async (novoModo: "teste" | "producao") => {
+    if (!userId) return;
+    setWebhookModo(novoModo);
+    setSavingWebhook(true);
+    try {
+      const { error } = await supabase
+        .from("config_webhook")
+        .upsert(
+          { user_id: userId, modo: novoModo, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        );
+      if (error) throw error;
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:webhook-config", userId],
+      });
+      toast.success(
+        `Modo ${novoModo === "producao" ? "Produção" : "Teste"} salvo.`,
+      );
+    } catch (err) {
+      toast.error(
+        `Falha ao salvar modo do webhook: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setSavingWebhook(false);
+    }
+  };
 
   // Sincroniza com status do banco quando a instância muda.
   useEffect(() => {
