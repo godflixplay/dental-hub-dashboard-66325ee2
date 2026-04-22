@@ -289,11 +289,15 @@ export function EnvioTab() {
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
+          console.log("[EnvioTab] Realtime chegou (INSERT):", payload);
           const novo = mapRow(payload.new as Record<string, unknown>);
           queryClient.setQueryData<Envio[]>(queryKey, (prev = []) => {
             if (prev.some((e) => e.id === novo.id)) return prev;
             return [novo, ...prev].slice(0, 50);
           });
+          // Também invalida a query para garantir consistência caso outro
+          // componente esteja lendo a mesma chave.
+          void queryClient.invalidateQueries({ queryKey });
           notifyFinalStatus(novo);
         },
       )
@@ -306,14 +310,18 @@ export function EnvioTab() {
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
+          console.log("[EnvioTab] Realtime chegou (UPDATE):", payload);
           const atualizado = mapRow(payload.new as Record<string, unknown>);
           queryClient.setQueryData<Envio[]>(queryKey, (prev = []) =>
             prev.map((e) => (e.id === atualizado.id ? atualizado : e)),
           );
+          void queryClient.invalidateQueries({ queryKey });
           notifyFinalStatus(atualizado);
         },
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log(`[EnvioTab] Realtime channel status: ${status}`, err ?? "");
+      });
 
     return () => {
       void supabase.removeChannel(channel);
