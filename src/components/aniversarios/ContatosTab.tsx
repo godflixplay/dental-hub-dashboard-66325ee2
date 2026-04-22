@@ -58,6 +58,7 @@ export function ContatosTab() {
   // Estado de import com preview
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<ParseResult | null>(null);
+  const [jaCadastradosSet, setJaCadastradosSet] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
 
   const contatosQuery = useQuery({
