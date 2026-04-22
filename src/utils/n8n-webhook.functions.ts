@@ -195,8 +195,10 @@ export const triggerN8nTestWebhook = createServerFn({ method: "POST" })
       if (!res.ok) {
         return {
           success: false as const,
-          error: `Webhook n8n respondeu ${res.status}: ${text.slice(0, 500)}`,
+          error: `Webhook n8n (${webhookModo}) respondeu ${res.status}: ${text.slice(0, 500)}`,
           status: res.status,
+          modo: webhookModo,
+          webhookUrl,
         };
       }
 
@@ -204,12 +206,16 @@ export const triggerN8nTestWebhook = createServerFn({ method: "POST" })
         success: true as const,
         status: res.status,
         response: text.slice(0, 1000),
+        modo: webhookModo,
+        webhookUrl,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return {
         success: false as const,
-        error: `Falha ao chamar webhook n8n: ${message}`,
+        error: `Falha ao chamar webhook n8n (${webhookModo}): ${message}`,
+        modo: webhookModo,
+        webhookUrl,
       };
     }
   });
