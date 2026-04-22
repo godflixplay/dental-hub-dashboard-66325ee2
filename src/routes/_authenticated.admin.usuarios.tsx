@@ -25,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { formatDateBR } from "@/lib/date-format";
 
 interface Profile {
   id: string;
@@ -128,7 +129,7 @@ function AdminUsuarios() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {new Date(profile.created_at).toLocaleDateString("pt-BR")}
+                      {formatDateBR(profile.created_at)}
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline">Desconectado</Badge>
@@ -185,9 +186,7 @@ function AdminUsuarios() {
                 <div>
                   <p className="text-muted-foreground">Data de Cadastro</p>
                   <p className="font-medium">
-                    {new Date(selectedUser.created_at).toLocaleDateString(
-                      "pt-BR",
-                    )}
+                    {formatDateBR(selectedUser.created_at)}
                   </p>
                 </div>
                 <div>
