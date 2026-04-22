@@ -427,6 +427,70 @@ export const getInstanceStatus = createServerFn({ method: "POST" })
 
 // Força reconexão da Evolution API SEM recriar a instância.
 // Usa o mesmo endpoint que o frontend usa para obter o QR.
+// Configura (ou reconfigura) o webhook de status da Evolution API para
+// uma instância já existente. Útil para instâncias criadas antes da
+// configuração automática de webhook ter sido implementada.
+export const configureInstanceWebhook = createServerFn({ method: "POST" })
+  .inputValidator((input: z.infer<typeof statusInstanceNameSchema>) =>
+    statusInstanceNameSchema.parse(input),
+  )
+  .handler(async ({ data }) => {
+    const { url, key } = getEvolutionConfig();
+    try {
+      await ensureInstanceExists(data.instanceName, data.accessToken);
+
+      const webhookPayload = {
+        webhook: {
+          url: EVOLUTION_STATUS_WEBHOOK_URL,
+          enabled: true,
+          webhook_by_events: false,
+          webhook_base64: false,
+          events: ["MESSAGES_UPDATE", "MESSAGES_STATUS"],
+        },
+      };
+
+      const endpoint = `${url}/webhook/set/${data.instanceName}`;
+      console.log("[Evolution] webhook/set →", endpoint, JSON.stringify(webhookPayload));
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: key,
+        },
+        body: JSON.stringify(webhookPayload),
+      });
+      const rawBody = await res.text();
+      const body = parseJsonSafely(rawBody) ?? rawBody;
+      console.log(
+        "[Evolution] webhook/set ←",
+        res.status,
+        typeof body === "string" ? body.slice(0, 400) : JSON.stringify(body).slice(0, 400),
+      );
+
+      if (!res.ok) {
+        return {
+          success: false,
+          error: `Erro ao configurar webhook [${res.status}]: ${typeof body === "string" ? body : JSON.stringify(body)}`,
+        };
+      }
+
+      return {
+        success: true,
+        endpoint,
+        events: ["MESSAGES_UPDATE", "MESSAGES_STATUS"],
+        webhookUrl: EVOLUTION_STATUS_WEBHOOK_URL,
+        data: body,
+      };
+    } catch (error) {
+      console.error("[Evolution] configureInstanceWebhook error", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  });
+
 export const reconnectInstance = createServerFn({ method: "POST" })
   .inputValidator((input: z.infer<typeof statusInstanceNameSchema>) =>
     statusInstanceNameSchema.parse(input),
