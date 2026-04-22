@@ -136,9 +136,8 @@ export function ContatosTab() {
     }
     setImporting(true);
     try {
-      // Converte 10/11 dígitos → 55DDXXXXXXXXX (padrão Evolution API).
-      // Cada linha vira um contato independente — telefones duplicados são permitidos.
-      const payload = previewData.validos.map((v) => {
+      // Monta payload normalizado
+      const candidatos = previewData.validos.map((v) => {
         const norm = normalizePhoneBR(v.telefone);
         return {
           user_id: user.id,
@@ -149,22 +148,64 @@ export function ContatosTab() {
         };
       });
 
-      // Insert em batch — sem deduplicar por telefone.
-      const { data: inserted, error } = await supabase
+      // Busca contatos já existentes do usuário para checar duplicidade
+      // (nome + telefone + data_nascimento iguais).
+      const { data: existentes, error: errExist } = await supabase
         .from("contatos")
-        .insert(payload)
-        .select("id");
+        .select("nome, telefone, data_nascimento")
+        .eq("user_id", user.id);
 
-      if (error) {
-        toast.error("Erro ao importar: " + error.message);
+      if (errExist) {
+        toast.error("Erro ao verificar duplicidade: " + errExist.message);
         return;
       }
 
-      const totalInserido = inserted?.length ?? 0;
+      const chave = (n: string, t: string, d: string | null) =>
+        `${(n ?? "").trim().toLowerCase()}|${t ?? ""}|${d ?? ""}`;
+
+      const existentesSet = new Set(
+        (existentes ?? []).map((c) =>
+          chave(
+            c.nome as string,
+            c.telefone as string,
+            c.data_nascimento as string | null,
+          ),
+        ),
+      );
+
+      // Filtra novos vs já cadastrados; também deduplica dentro do próprio batch.
+      const novos: typeof candidatos = [];
+      const lote = new Set<string>();
+      let jaCadastrados = 0;
+
+      for (const c of candidatos) {
+        const k = chave(c.nome, c.telefone, c.data_nascimento);
+        if (existentesSet.has(k) || lote.has(k)) {
+          jaCadastrados++;
+          continue;
+        }
+        lote.add(k);
+        novos.push(c);
+      }
+
+      let totalInserido = 0;
+      if (novos.length > 0) {
+        const { data: inserted, error } = await supabase
+          .from("contatos")
+          .insert(novos)
+          .select("id");
+
+        if (error) {
+          toast.error("Erro ao importar: " + error.message);
+          return;
+        }
+        totalInserido = inserted?.length ?? 0;
+      }
+
       const totalErro = previewData.invalidos.length;
 
       toast.success(
-        `Inseridos: ${totalInserido} • Com erro: ${totalErro}`,
+        `Cadastrados: ${totalInserido} • Já existiam: ${jaCadastrados} • Com erro: ${totalErro}`,
       );
 
       setPreviewOpen(false);
