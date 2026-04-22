@@ -588,7 +588,8 @@ export function ContatosTab() {
                 </div>
               )}
             </div>
-          )}
+            );
+          })()}
 
           <DialogFooter>
             <Button
