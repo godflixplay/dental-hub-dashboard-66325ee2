@@ -644,6 +644,18 @@ export function WhatsAppTab() {
             />
             Atualizar Status
           </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleConfigureWebhook}
+            disabled={configuringWebhook}
+            title="Registra o webhook de status na Evolution API para esta instância"
+          >
+            <RefreshCw
+              className={`mr-1 h-4 w-4 ${configuringWebhook ? "animate-spin" : ""}`}
+            />
+            {configuringWebhook ? "Configurando..." : "Configurar Webhook"}
+          </Button>
         </CardContent>
       </Card>
 
