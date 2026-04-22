@@ -1,4 +1,4 @@
-import { Cake, Megaphone, Bell, UserCheck, LayoutDashboard, LogOut, Shield } from "lucide-react";
+import { Cake, Megaphone, Bell, UserCheck, LayoutDashboard, LogOut, Shield, Users } from "lucide-react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 
 const clientMenuItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+  { title: "Meus Contatos", url: "/dashboard/contatos", icon: Users },
   { title: "Aniversários", url: "/dashboard/aniversarios", icon: Cake },
   { title: "Campanhas", url: "/dashboard/campanhas", icon: Megaphone },
   { title: "Lembretes", url: "/dashboard/lembretes", icon: Bell },

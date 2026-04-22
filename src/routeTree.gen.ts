@@ -21,6 +21,7 @@ import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated.admin.index'
 import { Route as AuthenticatedDashboardRecuperacaoRouteImport } from './routes/_authenticated.dashboard.recuperacao'
 import { Route as AuthenticatedDashboardLembretesRouteImport } from './routes/_authenticated.dashboard.lembretes'
+import { Route as AuthenticatedDashboardContatosRouteImport } from './routes/_authenticated.dashboard.contatos'
 import { Route as AuthenticatedDashboardCampanhasRouteImport } from './routes/_authenticated.dashboard.campanhas'
 import { Route as AuthenticatedDashboardAniversariosRouteImport } from './routes/_authenticated.dashboard.aniversarios'
 import { Route as AuthenticatedDashboardAdminRouteImport } from './routes/_authenticated.dashboard.admin'
@@ -90,6 +91,12 @@ const AuthenticatedDashboardLembretesRoute =
     path: '/lembretes',
     getParentRoute: () => AuthenticatedDashboardRoute,
   } as any)
+const AuthenticatedDashboardContatosRoute =
+  AuthenticatedDashboardContatosRouteImport.update({
+    id: '/contatos',
+    path: '/contatos',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
 const AuthenticatedDashboardCampanhasRoute =
   AuthenticatedDashboardCampanhasRouteImport.update({
     id: '/campanhas',
@@ -140,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
   '/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
+  '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
@@ -157,6 +165,7 @@ export interface FileRoutesByTo {
   '/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
   '/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
+  '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
@@ -178,6 +187,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/_authenticated/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
   '/_authenticated/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
+  '/_authenticated/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/_authenticated/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/_authenticated/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/dashboard/admin'
     | '/dashboard/aniversarios'
     | '/dashboard/campanhas'
+    | '/dashboard/contatos'
     | '/dashboard/lembretes'
     | '/dashboard/recuperacao'
     | '/admin/'
@@ -216,6 +227,7 @@ export interface FileRouteTypes {
     | '/dashboard/admin'
     | '/dashboard/aniversarios'
     | '/dashboard/campanhas'
+    | '/dashboard/contatos'
     | '/dashboard/lembretes'
     | '/dashboard/recuperacao'
     | '/admin'
@@ -236,6 +248,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/admin'
     | '/_authenticated/dashboard/aniversarios'
     | '/_authenticated/dashboard/campanhas'
+    | '/_authenticated/dashboard/contatos'
     | '/_authenticated/dashboard/lembretes'
     | '/_authenticated/dashboard/recuperacao'
     | '/_authenticated/admin/'
@@ -337,6 +350,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardLembretesRouteImport
       parentRoute: typeof AuthenticatedDashboardRoute
     }
+    '/_authenticated/dashboard/contatos': {
+      id: '/_authenticated/dashboard/contatos'
+      path: '/contatos'
+      fullPath: '/dashboard/contatos'
+      preLoaderRoute: typeof AuthenticatedDashboardContatosRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
     '/_authenticated/dashboard/campanhas': {
       id: '/_authenticated/dashboard/campanhas'
       path: '/campanhas'
@@ -403,6 +423,7 @@ interface AuthenticatedDashboardRouteChildren {
   AuthenticatedDashboardAdminRoute: typeof AuthenticatedDashboardAdminRoute
   AuthenticatedDashboardAniversariosRoute: typeof AuthenticatedDashboardAniversariosRoute
   AuthenticatedDashboardCampanhasRoute: typeof AuthenticatedDashboardCampanhasRoute
+  AuthenticatedDashboardContatosRoute: typeof AuthenticatedDashboardContatosRoute
   AuthenticatedDashboardLembretesRoute: typeof AuthenticatedDashboardLembretesRoute
   AuthenticatedDashboardRecuperacaoRoute: typeof AuthenticatedDashboardRecuperacaoRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
@@ -414,6 +435,7 @@ const AuthenticatedDashboardRouteChildren: AuthenticatedDashboardRouteChildren =
     AuthenticatedDashboardAniversariosRoute:
       AuthenticatedDashboardAniversariosRoute,
     AuthenticatedDashboardCampanhasRoute: AuthenticatedDashboardCampanhasRoute,
+    AuthenticatedDashboardContatosRoute: AuthenticatedDashboardContatosRoute,
     AuthenticatedDashboardLembretesRoute: AuthenticatedDashboardLembretesRoute,
     AuthenticatedDashboardRecuperacaoRoute:
       AuthenticatedDashboardRecuperacaoRoute,
