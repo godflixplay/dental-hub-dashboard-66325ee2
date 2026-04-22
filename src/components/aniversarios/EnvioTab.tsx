@@ -594,6 +594,40 @@ export function EnvioTab() {
         </CardHeader>
       </Card>
 
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Webhook className="h-4 w-4" />
+            Webhook de Envio (n8n)
+          </CardTitle>
+          <CardDescription>
+            Selecione o ambiente para o qual o disparo será enviado. A configuração é salva por usuário.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-2 sm:grid-cols-[200px_1fr] sm:items-center">
+            <Label>Modo do webhook</Label>
+            <Select
+              value={webhookModo}
+              onValueChange={(v) => handleSaveWebhookModo(v as "teste" | "producao")}
+              disabled={savingWebhook || webhookConfigQuery.isLoading}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="teste">Modo Teste</SelectItem>
+                <SelectItem value="producao">Modo Produção</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="rounded-md border bg-muted/30 p-3 text-xs">
+            <p className="mb-1 font-medium text-muted-foreground">URL ativa:</p>
+            <code className="break-all text-foreground">{WEBHOOK_URLS[webhookModo]}</code>
+          </div>
+        </CardContent>
+      </Card>
+
       {!hasConfiguredMessage && (
         <Card className="border-destructive/50 bg-destructive/5">
           <CardContent className="flex items-center gap-3 py-4">
