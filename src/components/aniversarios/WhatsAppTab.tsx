@@ -82,6 +82,7 @@ export function WhatsAppTab() {
   const [connecting, setConnecting] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [configuringWebhook, setConfiguringWebhook] = useState(false);
   const [qrError, setQrError] = useState<string | null>(null);
   const [steps, setSteps] =
     useState<Record<StepKey, StepState>>(INITIAL_STEPS);
