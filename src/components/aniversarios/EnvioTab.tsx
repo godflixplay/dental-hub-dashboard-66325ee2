@@ -85,6 +85,13 @@ export function EnvioTab() {
   const [customPhone, setCustomPhone] = useState("");
   const [customNome, setCustomNome] = useState("");
   const [sending, setSending] = useState(false);
+  const [webhookModo, setWebhookModo] = useState<"teste" | "producao">("teste");
+  const [savingWebhook, setSavingWebhook] = useState(false);
+
+  const WEBHOOK_URLS = {
+    teste: "https://n8n.vendavocenegocios.com.br/webhook-test/enviar-teste",
+    producao: "https://webhook.vendavocenegocios.com.br/webhook/enviar-teste",
+  } as const;
 
   const getAccessToken = useCallback(async () => {
     const {
