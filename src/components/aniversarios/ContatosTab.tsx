@@ -55,6 +55,11 @@ export function ContatosTab() {
   const [form, setForm] = useState({ nome: "", telefone: "", data_nascimento: "" });
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Estado de import com preview
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<ParseResult | null>(null);
+  const [importing, setImporting] = useState(false);
+
   const contatosQuery = useQuery({
     queryKey: ["aniv:contatos:full", userId],
     enabled: !!userId,
