@@ -576,6 +576,9 @@ export function EnvioTab() {
                   ? "Mensagem Configurada"
                   : "Mensagem Não Configurada"}
               </Badge>
+              <Badge variant={webhookModo === "producao" ? "default" : "secondary"}>
+                Webhook: {webhookModo === "producao" ? "Produção" : "Teste"}
+              </Badge>
             </div>
           </div>
           <CardDescription>
