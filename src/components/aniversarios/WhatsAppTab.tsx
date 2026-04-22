@@ -447,6 +447,36 @@ export function WhatsAppTab() {
     }
   };
 
+  const handleConfigureWebhook = async () => {
+    if (!instance) return;
+    setConfiguringWebhook(true);
+    try {
+      const accessToken = await getAccessToken();
+      const result = await withRequestTimeout(
+        configureInstanceWebhook({
+          data: { instanceName: instance.instance_name, accessToken },
+        }),
+        "A configuração do webhook",
+      );
+      if (!result.success) {
+        toast.error(result.error ?? "Erro ao configurar webhook");
+        return;
+      }
+      toast.success(
+        `Webhook configurado! Eventos: ${result.events?.join(", ") ?? "—"}`,
+      );
+      console.log("[WhatsAppTab] webhook configurado", {
+        endpoint: result.endpoint,
+        webhookUrl: result.webhookUrl,
+        events: result.events,
+      });
+    } catch (error) {
+      toast.error(getAniversariosErrorMessage(error));
+    } finally {
+      setConfiguringWebhook(false);
+    }
+  };
+
   const StepperCard = () => {
     const anyActivity = Object.values(steps).some((s) => s !== "pending");
     if (!anyActivity && !connecting) return null;
