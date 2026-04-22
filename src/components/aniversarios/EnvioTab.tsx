@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { getInstanceStatus } from "@/utils/evolution.functions";
 import { triggerN8nTestWebhook } from "@/utils/n8n-webhook.functions";
 import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
-import { Send, MessageSquare, AlertCircle, History } from "lucide-react";
+import { Send, MessageSquare, AlertCircle, History, Webhook } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
