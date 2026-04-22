@@ -4,6 +4,9 @@ import { z } from "zod";
 
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/integrations/supabase/client";
 
+const EVOLUTION_STATUS_WEBHOOK_URL =
+  "https://n8n.vendavocenegocios.com.br/webhook/evolution-status";
+
 const createInstanceSchema = z.object({
   instanceName: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/),
   accessToken: z.string().min(1),
