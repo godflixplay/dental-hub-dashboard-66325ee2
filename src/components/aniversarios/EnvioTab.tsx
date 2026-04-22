@@ -417,6 +417,12 @@ export function EnvioTab() {
 
       toast.success(`Disparo enviado ao n8n para ${nome}.`);
 
+      // Marca a query como stale para disparar refetch automático em paralelo
+      // ao loop manual de retry abaixo (Realtime + invalidate + retry concorrem).
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:envios", user.id],
+      });
+
       // Recarrega imediatamente a lista a partir do Supabase
       // (não dependemos só do Realtime nem do carregamento inicial).
       // Tenta algumas vezes porque o n8n pode levar alguns segundos
