@@ -319,7 +319,9 @@ export function EnvioTab() {
           notifyFinalStatus(atualizado);
         },
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log(`[EnvioTab] Realtime channel status: ${status}`, err ?? "");
+      });
 
     return () => {
       void supabase.removeChannel(channel);
