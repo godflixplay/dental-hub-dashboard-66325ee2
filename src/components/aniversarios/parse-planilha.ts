@@ -265,8 +265,6 @@ export async function parsePlanilhaFile(file: File): Promise<ParseResult> {
 
   const validos: ParsedRow[] = [];
   const invalidos: InvalidRow[] = [];
-  // Dedup interno: telefone já visto na própria planilha
-  const seen = new Set<string>();
 
   rows.forEach((row, idx) => {
     const linha = idx + 2; // +1 header, +1 base 1
@@ -298,16 +296,8 @@ export async function parsePlanilhaFile(file: File): Promise<ParseResult> {
       return;
     }
 
-    if (seen.has(tel.value)) {
-      invalidos.push({
-        linha,
-        motivo: "Telefone duplicado na planilha",
-        raw,
-      });
-      return;
-    }
-    seen.add(tel.value);
-
+    // Telefone repetido NÃO é mais erro — duplicidade real só ocorre quando
+    // nome + telefone + data_nascimento coincidem (validado contra o banco).
     validos.push({
       linha,
       nome,
