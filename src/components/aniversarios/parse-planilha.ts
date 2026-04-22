@@ -96,7 +96,32 @@ export function cleanTelefone(input: string): {
   return { ok: true, value: digits };
 }
 
-/** Aceita dd/mm ou dd/mm/aaaa (separadores: / - .). Retorna YYYY-MM-DD. Sem ano → 2000. */
+/** Mapa de nomes de meses (PT/EN, abreviados ou completos) → número. */
+const MONTH_NAMES: Record<string, number> = {
+  jan: 1, january: 1, janeiro: 1,
+  feb: 2, february: 2, fev: 2, fevereiro: 2,
+  mar: 3, march: 3, marco: 3, março: 3,
+  apr: 4, april: 4, abr: 4, abril: 4,
+  may: 5, mai: 5, maio: 5,
+  jun: 6, june: 6, junho: 6,
+  jul: 7, july: 7, julho: 7,
+  aug: 8, august: 8, ago: 8, agosto: 8,
+  sep: 9, sept: 9, september: 9, set: 9, setembro: 9,
+  oct: 10, october: 10, out: 10, outubro: 10,
+  nov: 11, november: 11, novembro: 11,
+  dec: 12, december: 12, dez: 12, dezembro: 12,
+};
+
+function monthFromName(name: string): number | null {
+  const key = name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\.$/, "");
+  return MONTH_NAMES[key] ?? null;
+}
+
+/** Aceita dd/mm, dd/mm/aaaa, ISO, serial Excel e textuais (ex: "22-Apr", "22-Apr-2020"). */
 export function parseDataNascimento(input: string): {
   ok: boolean;
   value: string;
@@ -107,15 +132,62 @@ export function parseDataNascimento(input: string): {
   }
   const raw = String(input).trim();
 
-  // Caso seja Excel serial number
-  const num = Number(raw);
-  if (!isNaN(num) && raw !== "" && num > 1000 && num < 100000) {
-    const date = new Date(Math.round((num - 25569) * 86400 * 1000));
-    if (!isNaN(date.getTime())) {
-      const y = date.getUTCFullYear();
-      const m = String(date.getUTCMonth() + 1).padStart(2, "0");
-      const d = String(date.getUTCDate()).padStart(2, "0");
-      return { ok: true, value: `${y}-${m}-${d}` };
+  // Caso seja Excel serial number (apenas se for puramente numérico)
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    const num = Number(raw);
+    if (!isNaN(num) && num > 1000 && num < 100000) {
+      const date = new Date(Math.round((num - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) {
+        const y = date.getUTCFullYear();
+        const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+        const d = String(date.getUTCDate()).padStart(2, "0");
+        return { ok: true, value: `${y}-${m}-${d}` };
+      }
+    }
+  }
+
+  // Textual com nome de mês: "22-Apr", "22-Apr-2020", "22 Abril", "22/abr/2020", "22 de abril de 2020"
+  // dd <sep> <mes-nome> [<sep> aaaa]
+  const textual = raw.match(
+    /^(\d{1,2})[\s/\-.]+(?:de\s+)?([A-Za-zÀ-ÿ.]+)(?:[\s/\-.]+(?:de\s+)?(\d{2,4}))?$/,
+  );
+  if (textual) {
+    const d = Number(textual[1]);
+    const m = monthFromName(textual[2]);
+    if (m !== null) {
+      let y = textual[3] ? Number(textual[3]) : 2000;
+      if (textual[3] && textual[3].length === 2) {
+        y = y < 30 ? 2000 + y : 1900 + y;
+      }
+      if (!isValidDayMonth(d, m)) {
+        return { ok: false, value: raw, motivo: "Dia/mês inválido" };
+      }
+      return {
+        ok: true,
+        value: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
+      };
+    }
+  }
+
+  // <mes-nome> dd [, aaaa] — formato US "Apr 22" / "Apr 22, 2020"
+  const textualUS = raw.match(
+    /^([A-Za-zÀ-ÿ.]+)[\s/\-.]+(\d{1,2})(?:[\s,/\-.]+(\d{2,4}))?$/,
+  );
+  if (textualUS) {
+    const m = monthFromName(textualUS[1]);
+    const d = Number(textualUS[2]);
+    if (m !== null) {
+      let y = textualUS[3] ? Number(textualUS[3]) : 2000;
+      if (textualUS[3] && textualUS[3].length === 2) {
+        y = y < 30 ? 2000 + y : 1900 + y;
+      }
+      if (!isValidDayMonth(d, m)) {
+        return { ok: false, value: raw, motivo: "Dia/mês inválido" };
+      }
+      return {
+        ok: true,
+        value: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
+      };
     }
   }
 
