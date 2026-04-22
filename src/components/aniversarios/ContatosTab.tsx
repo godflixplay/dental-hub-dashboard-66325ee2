@@ -136,7 +136,8 @@ export function ContatosTab() {
     }
     setImporting(true);
     try {
-      // Converte 10/11 dígitos → 55DDXXXXXXXXX (padrão Evolution API)
+      // Converte 10/11 dígitos → 55DDXXXXXXXXX (padrão Evolution API).
+      // Cada linha vira um contato independente — telefones duplicados são permitidos.
       const payload = previewData.validos.map((v) => {
         const norm = normalizePhoneBR(v.telefone);
         return {
@@ -148,13 +149,10 @@ export function ContatosTab() {
         };
       });
 
-      // Insert em batch ignorando duplicados (UNIQUE user_id+telefone)
+      // Insert em batch — sem deduplicar por telefone.
       const { data: inserted, error } = await supabase
         .from("contatos")
-        .upsert(payload, {
-          onConflict: "user_id,telefone",
-          ignoreDuplicates: true,
-        })
+        .insert(payload)
         .select("id");
 
       if (error) {
@@ -163,11 +161,10 @@ export function ContatosTab() {
       }
 
       const totalInserido = inserted?.length ?? 0;
-      const totalIgnorado = payload.length - totalInserido;
       const totalErro = previewData.invalidos.length;
 
       toast.success(
-        `Inseridos: ${totalInserido} • Ignorados (duplicados): ${totalIgnorado} • Com erro: ${totalErro}`,
+        `Inseridos: ${totalInserido} • Com erro: ${totalErro}`,
       );
 
       setPreviewOpen(false);
