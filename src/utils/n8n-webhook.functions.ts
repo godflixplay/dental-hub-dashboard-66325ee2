@@ -6,6 +6,19 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/integrations/supabase/client"
 
 const N8N_TEST_WEBHOOK_URL =
   "https://n8n.vendavocenegocios.com.br/webhook-test/enviar-teste";
+const N8N_PROD_WEBHOOK_URL =
+  "https://webhook.vendavocenegocios.com.br/webhook/enviar-teste";
+
+function resolveWebhookUrl(modo: string | null | undefined): {
+  url: string;
+  modo: "teste" | "producao";
+} {
+  const normalized = modo === "producao" ? "producao" : "teste";
+  return {
+    url: normalized === "producao" ? N8N_PROD_WEBHOOK_URL : N8N_TEST_WEBHOOK_URL,
+    modo: normalized,
+  };
+}
 
 const triggerSchema = z.object({
   accessToken: z.string().min(1),
@@ -145,6 +158,17 @@ export const triggerN8nTestWebhook = createServerFn({ method: "POST" })
 
     const { url: apiUrl, key: token } = getEvolutionConfig();
 
+    // Resolve URL do webhook (teste ou produção) com base na config do usuário.
+    const { data: webhookConfig } = await supabase
+      .from("config_webhook")
+      .select("modo")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const { url: webhookUrl, modo: webhookModo } = resolveWebhookUrl(
+      webhookConfig?.modo,
+    );
+
     // Payload final padronizado — nenhum campo obrigatório vai como null/undefined.
     const payload = {
       nome,
@@ -160,7 +184,7 @@ export const triggerN8nTestWebhook = createServerFn({ method: "POST" })
     };
 
     try {
-      const res = await fetch(N8N_TEST_WEBHOOK_URL, {
+      const res = await fetch(webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -171,8 +195,10 @@ export const triggerN8nTestWebhook = createServerFn({ method: "POST" })
       if (!res.ok) {
         return {
           success: false as const,
-          error: `Webhook n8n respondeu ${res.status}: ${text.slice(0, 500)}`,
+          error: `Webhook n8n (${webhookModo}) respondeu ${res.status}: ${text.slice(0, 500)}`,
           status: res.status,
+          modo: webhookModo,
+          webhookUrl,
         };
       }
 
@@ -180,12 +206,16 @@ export const triggerN8nTestWebhook = createServerFn({ method: "POST" })
         success: true as const,
         status: res.status,
         response: text.slice(0, 1000),
+        modo: webhookModo,
+        webhookUrl,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return {
         success: false as const,
-        error: `Falha ao chamar webhook n8n: ${message}`,
+        error: `Falha ao chamar webhook n8n (${webhookModo}): ${message}`,
+        modo: webhookModo,
+        webhookUrl,
       };
     }
   });

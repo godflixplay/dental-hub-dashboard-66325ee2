@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { getInstanceStatus } from "@/utils/evolution.functions";
 import { triggerN8nTestWebhook } from "@/utils/n8n-webhook.functions";
 import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
-import { Send, MessageSquare, AlertCircle, History } from "lucide-react";
+import { Send, MessageSquare, AlertCircle, History, Webhook } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -85,6 +85,13 @@ export function EnvioTab() {
   const [customPhone, setCustomPhone] = useState("");
   const [customNome, setCustomNome] = useState("");
   const [sending, setSending] = useState(false);
+  const [webhookModo, setWebhookModo] = useState<"teste" | "producao">("teste");
+  const [savingWebhook, setSavingWebhook] = useState(false);
+
+  const WEBHOOK_URLS = {
+    teste: "https://n8n.vendavocenegocios.com.br/webhook-test/enviar-teste",
+    producao: "https://webhook.vendavocenegocios.com.br/webhook/enviar-teste",
+  } as const;
 
   const getAccessToken = useCallback(async () => {
     const {
@@ -177,11 +184,59 @@ export function EnvioTab() {
     },
   });
 
+  const webhookConfigQuery = useQuery({
+    queryKey: ["aniv:webhook-config", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("config_webhook")
+        .select("modo")
+        .eq("user_id", userId!)
+        .maybeSingle();
+      if (error) throw error;
+      return (data?.modo as "teste" | "producao" | undefined) ?? "teste";
+    },
+  });
+
   const contatos = contatosQuery.data ?? [];
   const instanceRow = instanceQuery.data ?? null;
   const config = configQuery.data ?? null;
   const envios = enviosQuery.data ?? [];
   const instanceName = instanceRow?.instance_name ?? null;
+
+  // Sincroniza modo do webhook com o banco quando carrega.
+  useEffect(() => {
+    if (webhookConfigQuery.data) {
+      setWebhookModo(webhookConfigQuery.data);
+    }
+  }, [webhookConfigQuery.data]);
+
+  const handleSaveWebhookModo = async (novoModo: "teste" | "producao") => {
+    if (!userId) return;
+    setWebhookModo(novoModo);
+    setSavingWebhook(true);
+    try {
+      const { error } = await supabase
+        .from("config_webhook")
+        .upsert(
+          { user_id: userId, modo: novoModo, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" },
+        );
+      if (error) throw error;
+      await queryClient.invalidateQueries({
+        queryKey: ["aniv:webhook-config", userId],
+      });
+      toast.success(
+        `Modo ${novoModo === "producao" ? "Produção" : "Teste"} salvo.`,
+      );
+    } catch (err) {
+      toast.error(
+        `Falha ao salvar modo do webhook: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setSavingWebhook(false);
+    }
+  };
 
   // Sincroniza com status do banco quando a instância muda.
   useEffect(() => {
@@ -521,6 +576,9 @@ export function EnvioTab() {
                   ? "Mensagem Configurada"
                   : "Mensagem Não Configurada"}
               </Badge>
+              <Badge variant={webhookModo === "producao" ? "default" : "secondary"}>
+                Webhook: {webhookModo === "producao" ? "Produção" : "Teste"}
+              </Badge>
             </div>
           </div>
           <CardDescription>
@@ -534,6 +592,40 @@ export function EnvioTab() {
             )}
           </CardDescription>
         </CardHeader>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Webhook className="h-4 w-4" />
+            Webhook de Envio (n8n)
+          </CardTitle>
+          <CardDescription>
+            Selecione o ambiente para o qual o disparo será enviado. A configuração é salva por usuário.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-2 sm:grid-cols-[200px_1fr] sm:items-center">
+            <Label>Modo do webhook</Label>
+            <Select
+              value={webhookModo}
+              onValueChange={(v) => handleSaveWebhookModo(v as "teste" | "producao")}
+              disabled={savingWebhook || webhookConfigQuery.isLoading}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="teste">Modo Teste</SelectItem>
+                <SelectItem value="producao">Modo Produção</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="rounded-md border bg-muted/30 p-3 text-xs">
+            <p className="mb-1 font-medium text-muted-foreground">URL ativa:</p>
+            <code className="break-all text-foreground">{WEBHOOK_URLS[webhookModo]}</code>
+          </div>
+        </CardContent>
       </Card>
 
       {!hasConfiguredMessage && (
