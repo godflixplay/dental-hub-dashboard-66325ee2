@@ -291,7 +291,7 @@ export function ContatosTab() {
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,.xlsx,.xls"
+            accept=".csv,.xlsx"
             className="hidden"
             onChange={handleFileUpload}
           />
