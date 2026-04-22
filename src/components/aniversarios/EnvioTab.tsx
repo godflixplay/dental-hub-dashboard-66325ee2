@@ -310,10 +310,12 @@ export function EnvioTab() {
           filter: `user_id=eq.${userId}`,
         },
         (payload) => {
+          console.log("[EnvioTab] Realtime chegou (UPDATE):", payload);
           const atualizado = mapRow(payload.new as Record<string, unknown>);
           queryClient.setQueryData<Envio[]>(queryKey, (prev = []) =>
             prev.map((e) => (e.id === atualizado.id ? atualizado : e)),
           );
+          void queryClient.invalidateQueries({ queryKey });
           notifyFinalStatus(atualizado);
         },
       )
