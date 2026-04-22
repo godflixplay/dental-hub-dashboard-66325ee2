@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { getInstanceStatus } from "@/utils/evolution.functions";
 import { triggerN8nTestWebhook } from "@/utils/n8n-webhook.functions";
 import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
+import { formatDateTimeBR } from "@/lib/date-format";
 import { Send, MessageSquare, AlertCircle, History, Webhook } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -749,7 +750,7 @@ export function EnvioTab() {
                 {envios.map((e) => (
                   <TableRow key={e.id}>
                     <TableCell className="text-xs">
-                      {new Date(e.data_envio).toLocaleString("pt-BR")}
+                      {formatDateTimeBR(e.data_envio)}
                     </TableCell>
                     <TableCell>{e.nome ?? "-"}</TableCell>
                     <TableCell className="font-mono text-xs">

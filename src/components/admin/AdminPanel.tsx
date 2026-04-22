@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatDateBR } from "@/lib/date-format";
 
 interface Profile {
   id: string;
@@ -163,7 +164,7 @@ export function AdminPanel() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {new Date(profile.created_at).toLocaleDateString("pt-BR")}
+                          {formatDateBR(profile.created_at)}
                         </TableCell>
                       </TableRow>
                     ))
