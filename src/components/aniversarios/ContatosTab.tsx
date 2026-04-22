@@ -99,6 +99,13 @@ export function ContatosTab() {
     console.warn("[ContatosTab] erro ao carregar", contatosQuery.error);
   }
 
+  // Chave de duplicidade: nome (normalizado) + telefone (normalizado) + data
+  const dedupKey = (nome: string, telefone: string, data: string | null) => {
+    const norm = normalizePhoneBR(telefone);
+    const tel = norm.valid ? norm.phone : telefone;
+    return `${(nome ?? "").trim().toLowerCase()}|${tel ?? ""}|${data ?? ""}`;
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -118,6 +125,29 @@ export function ContatosTab() {
         toast.error("Planilha vazia.");
         return;
       }
+
+      // Busca contatos do usuário para já marcar status "Já cadastrado" no preview.
+      const { data: existentes, error: errExist } = await supabase
+        .from("contatos")
+        .select("nome, telefone, data_nascimento")
+        .eq("user_id", user.id);
+
+      if (errExist) {
+        toast.error("Erro ao verificar duplicidade: " + errExist.message);
+        return;
+      }
+
+      const set = new Set(
+        (existentes ?? []).map((c) =>
+          dedupKey(
+            c.nome as string,
+            c.telefone as string,
+            c.data_nascimento as string | null,
+          ),
+        ),
+      );
+
+      setJaCadastradosSet(set);
       setPreviewData(result);
       setPreviewOpen(true);
     } catch (err) {
@@ -149,39 +179,14 @@ export function ContatosTab() {
         };
       });
 
-      // Busca contatos já existentes do usuário para checar duplicidade
-      // (nome + telefone + data_nascimento iguais).
-      const { data: existentes, error: errExist } = await supabase
-        .from("contatos")
-        .select("nome, telefone, data_nascimento")
-        .eq("user_id", user.id);
-
-      if (errExist) {
-        toast.error("Erro ao verificar duplicidade: " + errExist.message);
-        return;
-      }
-
-      const chave = (n: string, t: string, d: string | null) =>
-        `${(n ?? "").trim().toLowerCase()}|${t ?? ""}|${d ?? ""}`;
-
-      const existentesSet = new Set(
-        (existentes ?? []).map((c) =>
-          chave(
-            c.nome as string,
-            c.telefone as string,
-            c.data_nascimento as string | null,
-          ),
-        ),
-      );
-
-      // Filtra novos vs já cadastrados; também deduplica dentro do próprio batch.
+      // Filtra novos vs já cadastrados (usa o set capturado no upload + dedup do batch).
       const novos: typeof candidatos = [];
       const lote = new Set<string>();
       let jaCadastrados = 0;
 
       for (const c of candidatos) {
-        const k = chave(c.nome, c.telefone, c.data_nascimento);
-        if (existentesSet.has(k) || lote.has(k)) {
+        const k = dedupKey(c.nome, c.telefone, c.data_nascimento);
+        if (jaCadastradosSet.has(k) || lote.has(k)) {
           jaCadastrados++;
           continue;
         }
@@ -211,6 +216,7 @@ export function ContatosTab() {
 
       setPreviewOpen(false);
       setPreviewData(null);
+      setJaCadastradosSet(new Set());
       await refetchContatos();
     } catch (err) {
       toast.error(getAniversariosErrorMessage(err));
