@@ -4,6 +4,9 @@ import { z } from "zod";
 
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/integrations/supabase/client";
 
+const EVOLUTION_STATUS_WEBHOOK_URL =
+  "https://n8n.vendavocenegocios.com.br/webhook/evolution-status";
+
 const createInstanceSchema = z.object({
   instanceName: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/),
   accessToken: z.string().min(1),
@@ -244,6 +247,50 @@ export const createInstance = createServerFn({ method: "POST" })
         userId,
         instanceName: data.instanceName,
       });
+
+      // Configura webhook automaticamente para receber status de mensagens.
+      // Não bloqueia o retorno em caso de falha — o usuário ainda consegue
+      // escanear o QR; o webhook pode ser reconfigurado depois.
+      try {
+        const webhookPayload = {
+          webhook: {
+            url: EVOLUTION_STATUS_WEBHOOK_URL,
+            enabled: true,
+            webhook_by_events: false,
+            webhook_base64: false,
+            events: ["MESSAGES_UPDATE", "MESSAGES_STATUS"],
+          },
+        };
+
+        const webhookRes = await fetch(
+          `${url}/webhook/set/${data.instanceName}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: key,
+            },
+            body: JSON.stringify(webhookPayload),
+          },
+        );
+        const webhookRaw = await webhookRes.text();
+        console.log(
+          "[Evolution] webhook/set ←",
+          webhookRes.status,
+          webhookRaw.slice(0, 300),
+        );
+        if (!webhookRes.ok) {
+          console.warn(
+            "[Evolution] createInstance: falha ao configurar webhook (não bloqueante)",
+            { instanceName: data.instanceName, status: webhookRes.status },
+          );
+        }
+      } catch (webhookError) {
+        console.warn(
+          "[Evolution] createInstance: erro ao configurar webhook (não bloqueante)",
+          webhookError,
+        );
+      }
 
       return { success: true, data: body, qrCode: qr };
     } catch (error) {
