@@ -423,7 +423,8 @@ export function ContatosTab() {
             <DialogTitle>Pré-visualização da Importação</DialogTitle>
             <DialogDescription>
               Confira os dados antes de salvar. Apenas linhas válidas serão
-              inseridas. Telefones já existentes serão ignorados automaticamente.
+              inseridas. Cada linha gera um contato independente — telefones
+              duplicados são permitidos.
             </DialogDescription>
           </DialogHeader>
 
