@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { Upload, Trash2, Search, Plus } from "lucide-react";
+import { Upload, Trash2, Search, Plus, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -21,15 +21,19 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
 import {
   getAniversariosErrorMessage,
   withRequestTimeout,
 } from "@/components/aniversarios/request-utils";
 import { normalizePhoneBR } from "@/components/aniversarios/phone-utils";
+import {
+  parsePlanilhaFile,
+  type ParseResult,
+} from "@/components/aniversarios/parse-planilha";
 
 interface Contato {
   id: string;
@@ -50,6 +54,11 @@ export function ContatosTab() {
   const [editContato, setEditContato] = useState<Contato | null>(null);
   const [form, setForm] = useState({ nome: "", telefone: "", data_nascimento: "" });
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Estado de import com preview
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<ParseResult | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const contatosQuery = useQuery({
     queryKey: ["aniv:contatos:full", userId],
@@ -92,100 +101,85 @@ export function ContatosTab() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
+
+    // Valida extensão
+    const name = file.name.toLowerCase();
+    if (!name.endsWith(".csv") && !name.endsWith(".xlsx")) {
+      toast.error("Formato inválido. Use apenas CSV ou XLSX.");
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(sheet, {
-        raw: false,
-      });
-
-      let rejected = 0;
-      const mapped = rows
-        .map((row) => {
-          const nome =
-            row["nome"] || row["Nome"] || row["NOME"] || row["name"] || "";
-          const telefone =
-            row["telefone"] ||
-            row["Telefone"] ||
-            row["TELEFONE"] ||
-            row["phone"] ||
-            row["celular"] ||
-            row["Celular"] ||
-            "";
-          const nascimento =
-            row["data_nascimento"] ||
-            row["Data Nascimento"] ||
-            row["DATA_NASCIMENTO"] ||
-            row["nascimento"] ||
-            row["Nascimento"] ||
-            row["aniversario"] ||
-            row["Aniversario"] ||
-            "";
-          const norm = normalizePhoneBR(telefone.toString());
-          return {
-            user_id: user.id,
-            instancia_id: instanciaId,
-            nome: nome.trim(),
-            telefone: norm.valid ? norm.phone : "",
-            data_nascimento: parseDate(nascimento) || null,
-            _valid: !!nome && norm.valid,
-          };
-        })
-        .filter((c) => {
-          if (!c._valid) {
-            rejected += 1;
-            return false;
-          }
-          return true;
-        })
-        .map(({ _valid, ...rest }) => rest);
-
-      if (mapped.length === 0) {
-        toast.error(
-          rejected > 0
-            ? `Nenhum contato válido. ${rejected} rejeitados (nome ausente ou número inválido).`
-            : "Nenhum contato válido encontrado na planilha",
-        );
+      const result = await parsePlanilhaFile(file);
+      if (result.total === 0) {
+        toast.error("Planilha vazia.");
         return;
       }
-
-      const { error } = await supabase.from("contatos").insert(mapped);
-      if (error) {
-        toast.error("Erro ao importar: " + error.message);
-      } else {
-        toast.success(
-          rejected > 0
-            ? `${mapped.length} contatos importados, ${rejected} rejeitados por número inválido.`
-            : `${mapped.length} contatos importados!`,
-        );
-        await refetchContatos();
-      }
-    } catch {
-      toast.error("Erro ao ler o arquivo");
+      setPreviewData(result);
+      setPreviewOpen(true);
+    } catch (err) {
+      console.error("[ContatosTab] erro ao ler arquivo", err);
+      toast.error("Erro ao ler o arquivo. Verifique o formato.");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   };
 
-  const parseDate = (value: string): string | null => {
-    if (!value) return null;
-    const brMatch = value.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
-    if (brMatch) {
-      const [, d, m, y] = brMatch;
-      return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  const handleConfirmImport = async () => {
+    if (!previewData || !user) return;
+    if (previewData.validos.length === 0) {
+      toast.error("Nenhuma linha válida para importar.");
+      return;
     }
-    const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-    const num = Number(value);
-    if (!isNaN(num) && num > 1000 && num < 100000) {
-      const date = new Date((num - 25569) * 86400 * 1000);
-      return date.toISOString().split("T")[0];
+    setImporting(true);
+    try {
+      // Converte 10/11 dígitos → 55DDXXXXXXXXX (padrão Evolution API)
+      const payload = previewData.validos.map((v) => {
+        const norm = normalizePhoneBR(v.telefone);
+        return {
+          user_id: user.id,
+          instancia_id: instanciaId,
+          nome: v.nome,
+          telefone: norm.valid ? norm.phone : v.telefone,
+          data_nascimento: v.data_nascimento,
+        };
+      });
+
+      // Insert em batch ignorando duplicados (UNIQUE user_id+telefone)
+      const { data: inserted, error } = await supabase
+        .from("contatos")
+        .upsert(payload, {
+          onConflict: "user_id,telefone",
+          ignoreDuplicates: true,
+        })
+        .select("id");
+
+      if (error) {
+        toast.error("Erro ao importar: " + error.message);
+        return;
+      }
+
+      const totalInserido = inserted?.length ?? 0;
+      const totalIgnorado = payload.length - totalInserido;
+      const totalErro = previewData.invalidos.length;
+
+      toast.success(
+        `Inseridos: ${totalInserido} • Ignorados (duplicados): ${totalIgnorado} • Com erro: ${totalErro}`,
+      );
+
+      setPreviewOpen(false);
+      setPreviewData(null);
+      await refetchContatos();
+    } catch (err) {
+      toast.error(getAniversariosErrorMessage(err));
+    } finally {
+      setImporting(false);
     }
-    return null;
   };
+
 
   const handleSave = async () => {
     if (!user || !form.nome || !form.telefone) return;
@@ -297,7 +291,7 @@ export function ContatosTab() {
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,.xlsx,.xls"
+            accept=".csv,.xlsx"
             className="hidden"
             onChange={handleFileUpload}
           />
@@ -413,6 +407,142 @@ export function ContatosTab() {
           </div>
           <DialogFooter>
             <Button onClick={handleSave}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Preview da importação */}
+      <Dialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewOpen(false);
+            setPreviewData(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Pré-visualização da Importação</DialogTitle>
+            <DialogDescription>
+              Confira os dados antes de salvar. Apenas linhas válidas serão
+              inseridas. Telefones já existentes serão ignorados automaticamente.
+            </DialogDescription>
+          </DialogHeader>
+
+          {previewData && (
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="secondary">Total: {previewData.total}</Badge>
+                <Badge className="bg-emerald-600 hover:bg-emerald-600">
+                  <CheckCircle2 className="mr-1 h-3 w-3" />
+                  Válidos: {previewData.validos.length}
+                </Badge>
+                <Badge variant="destructive">
+                  <AlertCircle className="mr-1 h-3 w-3" />
+                  Inválidos: {previewData.invalidos.length}
+                </Badge>
+              </div>
+
+              {previewData.validos.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">
+                    Válidos (mostrando até 20):
+                  </p>
+                  <Card>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">#</TableHead>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Telefone</TableHead>
+                          <TableHead>Nascimento</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {previewData.validos.slice(0, 20).map((v) => (
+                          <TableRow key={`v-${v.linha}`}>
+                            <TableCell className="text-muted-foreground">
+                              {v.linha}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {v.nome}
+                            </TableCell>
+                            <TableCell>{v.telefone}</TableCell>
+                            <TableCell>
+                              {new Date(
+                                v.data_nascimento + "T12:00:00",
+                              ).toLocaleDateString("pt-BR")}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Card>
+                </div>
+              )}
+
+              {previewData.invalidos.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2 text-destructive">
+                    Inválidos (mostrando até 20):
+                  </p>
+                  <Card>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">Linha</TableHead>
+                          <TableHead>Nome</TableHead>
+                          <TableHead>Telefone</TableHead>
+                          <TableHead>Data</TableHead>
+                          <TableHead>Motivo</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {previewData.invalidos.slice(0, 20).map((v) => (
+                          <TableRow key={`i-${v.linha}`}>
+                            <TableCell className="text-muted-foreground">
+                              {v.linha}
+                            </TableCell>
+                            <TableCell>{v.raw.nome || "—"}</TableCell>
+                            <TableCell>{v.raw.telefone || "—"}</TableCell>
+                            <TableCell>
+                              {v.raw.data_nascimento || "—"}
+                            </TableCell>
+                            <TableCell className="text-destructive text-xs">
+                              {v.motivo}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Card>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPreviewOpen(false);
+                setPreviewData(null);
+              }}
+              disabled={importing}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmImport}
+              disabled={
+                importing || !previewData || previewData.validos.length === 0
+              }
+            >
+              {importing
+                ? "Importando..."
+                : `Confirmar e importar ${previewData?.validos.length ?? 0}`}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
