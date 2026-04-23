@@ -137,13 +137,38 @@ function monthFromName(name: string): number | null {
   return MONTH_NAMES[key] ?? null;
 }
 
-/** Aceita dd/mm, dd/mm/aaaa, ISO, serial Excel e textuais (ex: "22-Apr", "22-Apr-2020"). */
-export function parseDataNascimento(input: string): {
+/** Aceita Date (JS), número (serial Excel), e strings: dd/mm, dd/mm/aaaa, ISO, dd/mmm, dd/mmm/aaaa. */
+export function parseDataNascimento(input: unknown): {
   ok: boolean;
   value: string;
   motivo?: string;
 } {
-  if (!input || !String(input).trim()) {
+  // 1) Date object vindo direto do XLSX (cellDates: true)
+  if (input instanceof Date) {
+    if (isNaN(input.getTime())) {
+      return { ok: false, value: "", motivo: "Data inválida" };
+    }
+    const y = input.getUTCFullYear();
+    const m = String(input.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(input.getUTCDate()).padStart(2, "0");
+    return { ok: true, value: `${y}-${m}-${d}` };
+  }
+
+  // 2) Número (serial Excel) vindo direto
+  if (typeof input === "number" && !isNaN(input)) {
+    if (input > 1000 && input < 100000) {
+      const date = new Date(Math.round((input - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) {
+        const y = date.getUTCFullYear();
+        const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+        const d = String(date.getUTCDate()).padStart(2, "0");
+        return { ok: true, value: `${y}-${m}-${d}` };
+      }
+    }
+    return { ok: false, value: String(input), motivo: "Número fora do intervalo de data" };
+  }
+
+  if (input === null || input === undefined || !String(input).trim()) {
     return { ok: false, value: "", motivo: "Data vazia" };
   }
   const raw = String(input).trim();
