@@ -105,19 +105,6 @@ export function EnvioTab() {
 
   // Queries: cada uma com sua chave, cache compartilhado de 30s vindo do
   // QueryClient global. Trocar de aba/voltar para a página é instantâneo.
-  const contatosQuery = useQuery({
-    queryKey: ["aniv:contatos", userId],
-    enabled: !!userId,
-    queryFn: async () => {
-      const { data, error } = await withRequestTimeout(
-        supabase.from("contatos").select("id, nome, telefone").order("nome"),
-        "O carregamento dos contatos",
-      );
-      if (error) throw error;
-      return (data as Contato[]) ?? [];
-    },
-  });
-
   const instanceQuery = useQuery({
     queryKey: ["aniv:instance", userId],
     enabled: !!userId,
@@ -125,13 +112,38 @@ export function EnvioTab() {
       const { data, error } = await withRequestTimeout(
         supabase
           .from("whatsapp_instances")
-          .select("instance_name, status")
+          .select("id, instance_name, status")
           .eq("user_id", userId!)
           .maybeSingle(),
         "O carregamento da instância",
       );
       if (error) throw error;
-      return (data as InstanceRow | null) ?? null;
+      return (data as (InstanceRow & { id: string }) | null) ?? null;
+    },
+  });
+
+  const instanciaId = instanceQuery.data?.id ?? null;
+
+  const contatosQuery = useQuery({
+    queryKey: ["aniv:contatos", userId, instanciaId],
+    enabled: !!userId,
+    queryFn: async () => {
+      // Isolamento: filtra por user_id (defesa em profundidade) e por instancia_id
+      // quando há instância ativa, para não misturar contatos entre instâncias.
+      let query = supabase
+        .from("contatos")
+        .select("id, nome, telefone")
+        .eq("user_id", userId!)
+        .order("nome");
+      if (instanciaId) {
+        query = query.eq("instancia_id", instanciaId);
+      }
+      const { data, error } = await withRequestTimeout(
+        query,
+        "O carregamento dos contatos",
+      );
+      if (error) throw error;
+      return (data as Contato[]) ?? [];
     },
   });
 

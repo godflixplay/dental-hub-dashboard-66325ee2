@@ -76,6 +76,7 @@ function MeusContatosPage() {
     queryKey,
     enabled: !!userId,
     queryFn: async () => {
+      // Isolamento: SEMPRE filtra por user_id (defesa em profundidade além da RLS).
       let query = supabase
         .from("contatos")
         .select("id, nome, telefone, data_nascimento, ativo, created_at", {
