@@ -233,11 +233,16 @@ export function parseDataNascimento(input: string): {
     };
   }
 
-  // dd/mm (sem ano) → 2000
+  // dd/mm (sem ano) → 2000 (com fallback m/d para formato US)
   const short = raw.match(/^(\d{1,2})[/\-.](\d{1,2})$/);
   if (short) {
-    const d = Number(short[1]);
-    const m = Number(short[2]);
+    let d = Number(short[1]);
+    let m = Number(short[2]);
+    if (d <= 12 && m > 12) {
+      const tmp = d;
+      d = m;
+      m = tmp;
+    }
     if (!isValidDayMonth(d, m)) {
       return { ok: false, value: raw, motivo: "Dia/mês inválido" };
     }
