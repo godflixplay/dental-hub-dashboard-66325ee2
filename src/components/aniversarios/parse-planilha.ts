@@ -206,15 +206,23 @@ export function parseDataNascimento(input: string): {
     return { ok: false, value: raw, motivo: "Dia/mês inválido" };
   }
 
-  // dd/mm/aaaa
+  // dd/mm/aaaa (com fallback para m/d/y formato US, comum quando Excel
+  // formata datas em locale en-US — ex: "4/23/00" significa 23/abr/2000).
   const full = raw.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
   if (full) {
-    const d = Number(full[1]);
-    const m = Number(full[2]);
+    let d = Number(full[1]);
+    let m = Number(full[2]);
     let y = Number(full[3]);
     if (full[3].length === 2) {
       // ex: 90 → 1990, 10 → 2010 (regra simples: <30 → 2000s, >=30 → 1900s)
       y = y < 30 ? 2000 + y : 1900 + y;
+    }
+    // Heurística: se dd>12 e mm<=12, é dd/mm (já correto).
+    // Se primeiro<=12 e segundo>12, é formato US m/d/y → inverter.
+    if (d <= 12 && m > 12) {
+      const tmp = d;
+      d = m;
+      m = tmp;
     }
     if (!isValidDayMonth(d, m)) {
       return { ok: false, value: raw, motivo: "Dia/mês inválido" };
