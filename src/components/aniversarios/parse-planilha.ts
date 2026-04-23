@@ -310,10 +310,10 @@ function isValidDayMonth(d: number, m: number): boolean {
 
 export async function parsePlanilhaFile(file: File): Promise<ParseResult> {
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf);
+  const wb = XLSX.read(buf, { cellDates: true });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, {
-    raw: false,
+    raw: true,
     defval: "",
   });
 
@@ -324,12 +324,17 @@ export async function parsePlanilhaFile(file: File): Promise<ParseResult> {
     const linha = idx + 2; // +1 header, +1 base 1
     const rawNome = pickField(row, "nome");
     const rawTel = pickField(row, "telefone");
-    const rawData = pickField(row, "data_nascimento");
+    const rawDataValue = pickFieldRaw(row, "data_nascimento");
+    const rawDataStr = pickField(row, "data_nascimento");
+
+    // Debug temporário — ajuda a identificar formatos inesperados vindos do XLSX
+    // eslint-disable-next-line no-console
+    console.log("DATA RAW:", rawDataValue, "tipo:", typeof rawDataValue, rawDataValue instanceof Date ? "(Date)" : "");
 
     const raw = {
       nome: rawNome,
       telefone: rawTel,
-      data_nascimento: rawData,
+      data_nascimento: rawDataStr,
     };
 
     const nome = rawNome.trim();
@@ -344,7 +349,7 @@ export async function parsePlanilhaFile(file: File): Promise<ParseResult> {
       return;
     }
 
-    const data = parseDataNascimento(rawData);
+    const data = parseDataNascimento(rawDataValue);
     if (!data.ok) {
       invalidos.push({ linha, motivo: data.motivo ?? "Data inválida", raw });
       return;
