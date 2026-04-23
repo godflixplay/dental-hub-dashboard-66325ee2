@@ -61,19 +61,7 @@ export function ContatosTab() {
   const [jaCadastradosSet, setJaCadastradosSet] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
 
-  const contatosQuery = useQuery({
-    queryKey: ["aniv:contatos:full", userId],
-    enabled: !!userId,
-    queryFn: async () => {
-      const { data, error } = await withRequestTimeout(
-        supabase.from("contatos").select("*").order("nome", { ascending: true }),
-        "O carregamento dos contatos",
-      );
-      if (error) throw error;
-      return (data as Contato[]) ?? [];
-    },
-  });
-
+  // Carrega instância ativa primeiro: contatos serão filtrados por user_id + instancia_id.
   const instanciaQuery = useQuery({
     queryKey: ["aniv:instance:id", userId],
     enabled: !!userId,
@@ -87,8 +75,33 @@ export function ContatosTab() {
     },
   });
 
-  const contatos = contatosQuery.data ?? [];
   const instanciaId = instanciaQuery.data ?? null;
+
+  const contatosQuery = useQuery({
+    queryKey: ["aniv:contatos:full", userId, instanciaId],
+    enabled: !!userId,
+    queryFn: async () => {
+      // Isolamento: SEMPRE filtra por user_id (defesa em profundidade além da RLS).
+      // Se houver instância ativa, filtra também por instancia_id para não misturar
+      // contatos entre instâncias do mesmo usuário.
+      let query = supabase
+        .from("contatos")
+        .select("*")
+        .eq("user_id", userId!)
+        .order("nome", { ascending: true });
+      if (instanciaId) {
+        query = query.eq("instancia_id", instanciaId);
+      }
+      const { data, error } = await withRequestTimeout(
+        query,
+        "O carregamento dos contatos",
+      );
+      if (error) throw error;
+      return (data as Contato[]) ?? [];
+    },
+  });
+
+  const contatos = contatosQuery.data ?? [];
   const loading = contatosQuery.isLoading;
 
   const refetchContatos = () =>
@@ -256,10 +269,12 @@ export function ContatosTab() {
 
     try {
       if (editContato) {
+        // Isolamento: só atualiza se o registro pertencer ao usuário logado.
         const { error } = await supabase
           .from("contatos")
           .update(payload)
-          .eq("id", editContato.id);
+          .eq("id", editContato.id)
+          .eq("user_id", user.id);
         if (error) throw error;
         toast.success("Contato atualizado");
         setEditContato(null);
@@ -277,7 +292,13 @@ export function ContatosTab() {
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("contatos").delete().eq("id", id);
+    if (!user) return;
+    // Isolamento: só deleta se o registro pertencer ao usuário logado.
+    const { error } = await supabase
+      .from("contatos")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", user.id);
     if (error) toast.error(error.message);
     else {
       toast.success("Contato removido");
