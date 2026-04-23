@@ -56,19 +56,35 @@ function normalizeKey(k: string): string {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-function pickField(
+function pickFieldRaw(
   row: Record<string, unknown>,
   field: keyof ParsedRow["raw"],
-): string {
+): unknown {
   const aliases = HEADER_ALIASES[field];
   for (const key of Object.keys(row)) {
     if (aliases.includes(normalizeKey(key))) {
       const v = row[key];
       if (v === undefined || v === null) return "";
-      return String(v);
+      return v;
     }
   }
   return "";
+}
+
+function pickField(
+  row: Record<string, unknown>,
+  field: keyof ParsedRow["raw"],
+): string {
+  const v = pickFieldRaw(row, field);
+  if (v === undefined || v === null) return "";
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return "";
+    const y = v.getUTCFullYear();
+    const m = String(v.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(v.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return String(v);
 }
 
 /** Limpa telefone: remove tudo que não for dígito; remove DDI 55 se presente para checar 10/11. */
