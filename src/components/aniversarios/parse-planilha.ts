@@ -56,19 +56,35 @@ function normalizeKey(k: string): string {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-function pickField(
+function pickFieldRaw(
   row: Record<string, unknown>,
   field: keyof ParsedRow["raw"],
-): string {
+): unknown {
   const aliases = HEADER_ALIASES[field];
   for (const key of Object.keys(row)) {
     if (aliases.includes(normalizeKey(key))) {
       const v = row[key];
       if (v === undefined || v === null) return "";
-      return String(v);
+      return v;
     }
   }
   return "";
+}
+
+function pickField(
+  row: Record<string, unknown>,
+  field: keyof ParsedRow["raw"],
+): string {
+  const v = pickFieldRaw(row, field);
+  if (v === undefined || v === null) return "";
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return "";
+    const y = v.getUTCFullYear();
+    const m = String(v.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(v.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return String(v);
 }
 
 /** Limpa telefone: remove tudo que não for dígito; remove DDI 55 se presente para checar 10/11. */
@@ -121,13 +137,38 @@ function monthFromName(name: string): number | null {
   return MONTH_NAMES[key] ?? null;
 }
 
-/** Aceita dd/mm, dd/mm/aaaa, ISO, serial Excel e textuais (ex: "22-Apr", "22-Apr-2020"). */
-export function parseDataNascimento(input: string): {
+/** Aceita Date (JS), número (serial Excel), e strings: dd/mm, dd/mm/aaaa, ISO, dd/mmm, dd/mmm/aaaa. */
+export function parseDataNascimento(input: unknown): {
   ok: boolean;
   value: string;
   motivo?: string;
 } {
-  if (!input || !String(input).trim()) {
+  // 1) Date object vindo direto do XLSX (cellDates: true)
+  if (input instanceof Date) {
+    if (isNaN(input.getTime())) {
+      return { ok: false, value: "", motivo: "Data inválida" };
+    }
+    const y = input.getUTCFullYear();
+    const m = String(input.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(input.getUTCDate()).padStart(2, "0");
+    return { ok: true, value: `${y}-${m}-${d}` };
+  }
+
+  // 2) Número (serial Excel) vindo direto
+  if (typeof input === "number" && !isNaN(input)) {
+    if (input > 1000 && input < 100000) {
+      const date = new Date(Math.round((input - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) {
+        const y = date.getUTCFullYear();
+        const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+        const d = String(date.getUTCDate()).padStart(2, "0");
+        return { ok: true, value: `${y}-${m}-${d}` };
+      }
+    }
+    return { ok: false, value: String(input), motivo: "Número fora do intervalo de data" };
+  }
+
+  if (input === null || input === undefined || !String(input).trim()) {
     return { ok: false, value: "", motivo: "Data vazia" };
   }
   const raw = String(input).trim();
@@ -269,10 +310,10 @@ function isValidDayMonth(d: number, m: number): boolean {
 
 export async function parsePlanilhaFile(file: File): Promise<ParseResult> {
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf);
+  const wb = XLSX.read(buf, { cellDates: true });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, {
-    raw: false,
+    raw: true,
     defval: "",
   });
 
@@ -283,12 +324,17 @@ export async function parsePlanilhaFile(file: File): Promise<ParseResult> {
     const linha = idx + 2; // +1 header, +1 base 1
     const rawNome = pickField(row, "nome");
     const rawTel = pickField(row, "telefone");
-    const rawData = pickField(row, "data_nascimento");
+    const rawDataValue = pickFieldRaw(row, "data_nascimento");
+    const rawDataStr = pickField(row, "data_nascimento");
+
+    // Debug temporário — ajuda a identificar formatos inesperados vindos do XLSX
+    // eslint-disable-next-line no-console
+    console.log("DATA RAW:", rawDataValue, "tipo:", typeof rawDataValue, rawDataValue instanceof Date ? "(Date)" : "");
 
     const raw = {
       nome: rawNome,
       telefone: rawTel,
-      data_nascimento: rawData,
+      data_nascimento: rawDataStr,
     };
 
     const nome = rawNome.trim();
@@ -303,7 +349,7 @@ export async function parsePlanilhaFile(file: File): Promise<ParseResult> {
       return;
     }
 
-    const data = parseDataNascimento(rawData);
+    const data = parseDataNascimento(rawDataValue);
     if (!data.ok) {
       invalidos.push({ linha, motivo: data.motivo ?? "Data inválida", raw });
       return;
