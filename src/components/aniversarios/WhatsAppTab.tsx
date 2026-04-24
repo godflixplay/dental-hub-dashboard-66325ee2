@@ -173,6 +173,40 @@ export function WhatsAppTab() {
     [stopPolling, queryClient, userId],
   );
 
+  // Quando a instância foi apagada diretamente na Evolution API (404),
+  // removemos o registro do Supabase para que o usuário possa criar uma
+  // nova instância. createInstance vai gerar um novo instance_name único
+  // baseado no nome da clínica/responsável.
+  const handleInstanceDeletedRemotely = useCallback(
+    async (instanceRow: Instance) => {
+      stopPolling();
+      setQrCode(null);
+      resetSteps();
+      try {
+        await supabase
+          .from("whatsapp_instances")
+          .delete()
+          .eq("id", instanceRow.id)
+          .eq("user_id", userId!);
+      } catch (err) {
+        console.warn("[WhatsAppTab] falha ao limpar instância órfã", err);
+      }
+      setInstance(null);
+      bootstrappedForRef.current = null;
+      void queryClient.invalidateQueries({
+        queryKey: ["aniv:wpp:instance", userId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["aniv:instance", userId],
+      });
+      setQrError(
+        "A instância anterior foi removida na Evolution API. Clique em \"Conectar WhatsApp\" para criar uma nova.",
+      );
+      toast.info("Instância removida na Evolution. Crie uma nova abaixo.");
+    },
+    [stopPolling, queryClient, userId],
+  );
+
   const fetchQrAndShow = useCallback(
     async (instanceName: string, accessToken: string) => {
       updateStep("qr", "active");
@@ -312,6 +346,13 @@ export function WhatsAppTab() {
         return;
       }
 
+      // Instância foi deletada do lado da Evolution → limpa do banco
+      // para permitir recriação (que vai reaproveitar o mesmo instance_name).
+      if ((statusResult as { notFound?: boolean }).notFound) {
+        await handleInstanceDeletedRemotely(existingInstance);
+        return;
+      }
+
       const state = statusResult.data?.instance?.state ?? "disconnected";
 
       if (state === "open") {
@@ -341,6 +382,7 @@ export function WhatsAppTab() {
     fetchQrAndShow,
     markConnected,
     startPolling,
+    handleInstanceDeletedRemotely,
   ]);
 
   useEffect(() => {
@@ -421,6 +463,12 @@ export function WhatsAppTab() {
       );
       if (!result.success) {
         toast.error(result.error ?? "Erro ao verificar status");
+        return;
+      }
+
+      // Instância foi deletada do lado da Evolution → limpa do banco.
+      if ((result as { notFound?: boolean }).notFound) {
+        await handleInstanceDeletedRemotely(instance);
         return;
       }
 

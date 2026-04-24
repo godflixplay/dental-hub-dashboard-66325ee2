@@ -471,10 +471,29 @@ export const getInstanceStatus = createServerFn({ method: "POST" })
         res.status,
         typeof body === "string" ? body.slice(0, 300) : JSON.stringify(body).slice(0, 300),
       );
+
+      // 404 + "does not exist" → instância foi deletada na Evolution.
+      // Retornamos sucesso com flag notFound para o frontend tratar
+      // (atualizar banco para 'deleted' e permitir recriar a mesma instância).
+      const bodyStr = typeof body === "string" ? body : JSON.stringify(body);
+      const looksLikeNotFound =
+        res.status === 404 && /does not exist|not found|n[ãa]o existe/i.test(bodyStr);
+      if (looksLikeNotFound) {
+        console.warn("[Evolution] connectionState: instância não existe na Evolution", {
+          instanceName: data.instanceName,
+        });
+        return {
+          success: true,
+          notFound: true,
+          data: { instance: { state: "deleted" } },
+          ownerNumber: null,
+        };
+      }
+
       if (!res.ok) {
         return {
           success: false,
-          error: `Error [${res.status}]: ${typeof body === "string" ? body : JSON.stringify(body)}`,
+          error: `Error [${res.status}]: ${bodyStr}`,
         };
       }
       // Extrai o número conectado (ownerJid) — usado para impedir auto-envio
