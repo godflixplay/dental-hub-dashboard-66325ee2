@@ -170,7 +170,7 @@ function slugify(value: string): string {
 const PROJECT_TAG_DEFAULT = "dentalhub_aniversario";
 
 async function buildUniqueInstanceName(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof getAuthenticatedSupabase>>["supabase"],
   baseSlug: string,
 ): Promise<string> {
   const base = `dentalhub_${baseSlug || "cliente"}`;
