@@ -121,6 +121,27 @@ function SignupPage() {
                 </div>
               )}
               <div className="space-y-2">
+                <Label htmlFor="nomeResponsavel">Nome do responsável *</Label>
+                <Input
+                  id="nomeResponsavel"
+                  type="text"
+                  placeholder="Ex: João Silva"
+                  value={nomeResponsavel}
+                  onChange={(e) => setNomeResponsavel(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="nomeClinica">Nome da clínica (opcional)</Label>
+                <Input
+                  id="nomeClinica"
+                  type="text"
+                  placeholder="Ex: Clínica Sorriso"
+                  value={nomeClinica}
+                  onChange={(e) => setNomeClinica(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="email">E-mail</Label>
                 <Input
                   id="email"
