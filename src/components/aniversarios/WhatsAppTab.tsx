@@ -173,6 +173,40 @@ export function WhatsAppTab() {
     [stopPolling, queryClient, userId],
   );
 
+  // Quando a instância foi apagada diretamente na Evolution API (404),
+  // removemos o registro do Supabase para que o usuário possa criar uma
+  // nova instância. createInstance vai gerar um novo instance_name único
+  // baseado no nome da clínica/responsável.
+  const handleInstanceDeletedRemotely = useCallback(
+    async (instanceRow: Instance) => {
+      stopPolling();
+      setQrCode(null);
+      resetSteps();
+      try {
+        await supabase
+          .from("whatsapp_instances")
+          .delete()
+          .eq("id", instanceRow.id)
+          .eq("user_id", userId!);
+      } catch (err) {
+        console.warn("[WhatsAppTab] falha ao limpar instância órfã", err);
+      }
+      setInstance(null);
+      bootstrappedForRef.current = null;
+      void queryClient.invalidateQueries({
+        queryKey: ["aniv:wpp:instance", userId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["aniv:instance", userId],
+      });
+      setQrError(
+        "A instância anterior foi removida na Evolution API. Clique em \"Conectar WhatsApp\" para criar uma nova.",
+      );
+      toast.info("Instância removida na Evolution. Crie uma nova abaixo.");
+    },
+    [stopPolling, queryClient, userId],
+  );
+
   const fetchQrAndShow = useCallback(
     async (instanceName: string, accessToken: string) => {
       updateStep("qr", "active");
