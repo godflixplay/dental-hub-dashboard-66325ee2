@@ -312,6 +312,13 @@ export function WhatsAppTab() {
         return;
       }
 
+      // Instância foi deletada do lado da Evolution → limpa do banco
+      // para permitir recriação (que vai reaproveitar o mesmo instance_name).
+      if ((statusResult as { notFound?: boolean }).notFound) {
+        await handleInstanceDeletedRemotely(existingInstance);
+        return;
+      }
+
       const state = statusResult.data?.instance?.state ?? "disconnected";
 
       if (state === "open") {
