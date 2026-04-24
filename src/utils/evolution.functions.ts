@@ -155,6 +155,45 @@ function getEvolutionConfig() {
   return { url: cleaned, key };
 }
 
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s_-]/g, "")
+    .trim()
+    .replace(/[\s-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+const PROJECT_TAG_DEFAULT = "dentalhub_aniversario";
+
+async function buildUniqueInstanceName(
+  supabase: ReturnType<typeof createClient>,
+  baseSlug: string,
+): Promise<string> {
+  const base = `dentalhub_${baseSlug || "cliente"}`;
+  let candidate = base;
+  let suffix = 0;
+
+  // Loop até achar um nome livre. Limite defensivo de 1000 tentativas.
+  while (suffix < 1000) {
+    const { data, error } = await supabase
+      .from("whatsapp_instances")
+      .select("id")
+      .eq("instance_name", candidate)
+      .maybeSingle();
+    if (error) {
+      throw new Error(`Erro ao validar unicidade do instance_name: ${error.message}`);
+    }
+    if (!data) return candidate;
+    suffix += 1;
+    candidate = `${base}_${suffix}`;
+  }
+  throw new Error("Não foi possível gerar um instance_name único.");
+}
+
 export const createInstance = createServerFn({ method: "POST" })
   .inputValidator((input: z.infer<typeof createInstanceSchema>) =>
     createInstanceSchema.parse(input),
@@ -162,7 +201,65 @@ export const createInstance = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { url, key } = getEvolutionConfig();
     try {
-      console.log("[Evolution] createInstance →", { url, instanceName: data.instanceName });
+      // 1) Autentica e carrega dados do cliente para gerar instance_name
+      const { supabase, user } = await getAuthenticatedSupabase(data.accessToken);
+      const userId = user.id;
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("nome_responsavel, nome_clinica")
+        .eq("id", userId)
+        .maybeSingle();
+      if (profileError) {
+        console.warn("[Evolution] createInstance: erro ao ler profile (seguindo com fallback)", profileError);
+      }
+
+      const metadata = (user.user_metadata ?? {}) as {
+        nome_responsavel?: string;
+        nome_clinica?: string;
+      };
+      const nomeClinica =
+        (profile?.nome_clinica as string | null) ?? metadata.nome_clinica ?? "";
+      const nomeResponsavel =
+        (profile?.nome_responsavel as string | null) ??
+        metadata.nome_responsavel ??
+        "";
+      const baseNome =
+        (nomeClinica && nomeClinica.trim()) ||
+        (nomeResponsavel && nomeResponsavel.trim()) ||
+        (user.email ? user.email.split("@")[0] : "") ||
+        userId.replace(/-/g, "").slice(0, 12);
+
+      const baseSlug = slugify(baseNome);
+
+      // Se o usuário já tem instância, reutiliza o instance_name dela
+      const { data: existing, error: selectError } = await supabase
+        .from("whatsapp_instances")
+        .select("id, instance_name")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (selectError) {
+        console.error("[Evolution] createInstance: erro ao consultar whatsapp_instances", selectError);
+        return {
+          success: false,
+          error: `Erro ao consultar banco: ${selectError.message}`,
+        };
+      }
+
+      const instanceName = existing?.instance_name
+        ? existing.instance_name
+        : await buildUniqueInstanceName(supabase, baseSlug);
+
+      // Sobrescreve o instanceName recebido (frontend pode mandar legado)
+      const finalInstanceName = instanceName;
+      console.log("[Evolution] createInstance →", {
+        url,
+        instanceName: finalInstanceName,
+        baseNome,
+        suggestedByClient: data.instanceName,
+      });
+
+      // 2) Cria na Evolution API
       const res = await fetch(`${url}/instance/create`, {
         method: "POST",
         headers: {
@@ -170,7 +267,7 @@ export const createInstance = createServerFn({ method: "POST" })
           apikey: key,
         },
         body: JSON.stringify({
-          instanceName: data.instanceName,
+          instanceName: finalInstanceName,
           integration: "WHATSAPP-BAILEYS",
           qrcode: true,
         }),
@@ -190,7 +287,7 @@ export const createInstance = createServerFn({ method: "POST" })
 
       if (alreadyInUse) {
         console.warn("[Evolution] createInstance: nome já existe na Evolution, reutilizando instância", {
-          instanceName: data.instanceName,
+          instanceName: finalInstanceName,
         });
       }
 
@@ -201,29 +298,14 @@ export const createInstance = createServerFn({ method: "POST" })
           ? ((body as { instance?: { instanceId?: string } }).instance?.instanceId ?? null)
           : null;
 
-      const { supabase, user } = await getAuthenticatedSupabase(data.accessToken);
-      const userId = user.id;
+      // 3) Persiste no banco com project_tag obrigatório
       const payload = {
         user_id: userId,
-        instance_name: data.instanceName,
+        instance_name: finalInstanceName,
         instance_id: instanceId,
         status: "disconnected",
+        project_tag: PROJECT_TAG_DEFAULT,
       };
-
-      // Verifica se já existe registro para esse usuário
-      const { data: existing, error: selectError } = await supabase
-        .from("whatsapp_instances")
-        .select("id")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (selectError) {
-        console.error("[Evolution] createInstance: erro ao consultar whatsapp_instances", selectError);
-        return {
-          success: false,
-          error: `Erro ao consultar banco: ${selectError.message}`,
-        };
-      }
 
       const dbResult = existing
         ? await supabase
@@ -235,7 +317,7 @@ export const createInstance = createServerFn({ method: "POST" })
       if (dbResult.error) {
         console.error(
           "[Evolution] createInstance: falha ao salvar instância no banco",
-          { userId, instanceName: data.instanceName, error: dbResult.error },
+          { userId, instanceName: finalInstanceName, error: dbResult.error },
         );
         return {
           success: false,
@@ -245,7 +327,8 @@ export const createInstance = createServerFn({ method: "POST" })
 
       console.log("[Evolution] createInstance: instância salva no banco", {
         userId,
-        instanceName: data.instanceName,
+        instanceName: finalInstanceName,
+        project_tag: PROJECT_TAG_DEFAULT,
       });
 
       // Configura webhook automaticamente para receber status de mensagens.
