@@ -382,6 +382,7 @@ export function WhatsAppTab() {
     fetchQrAndShow,
     markConnected,
     startPolling,
+    handleInstanceDeletedRemotely,
   ]);
 
   useEffect(() => {
