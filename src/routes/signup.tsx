@@ -39,6 +39,11 @@ function SignupPage() {
     e.preventDefault();
     setError("");
 
+    if (!nomeResponsavel.trim()) {
+      setError("Informe o nome do responsável.");
+      return;
+    }
+
     if (password !== confirmPassword) {
       setError("As senhas não coincidem.");
       return;
@@ -54,7 +59,13 @@ function SignupPage() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: window.location.origin },
+      options: {
+        emailRedirectTo: window.location.origin,
+        data: {
+          nome_responsavel: nomeResponsavel.trim(),
+          nome_clinica: nomeClinica.trim() || null,
+        },
+      },
     });
 
     if (error) {
