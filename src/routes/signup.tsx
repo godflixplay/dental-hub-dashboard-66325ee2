@@ -14,6 +14,8 @@ export const Route = createFileRoute("/signup")({
 function SignupPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const [nomeResponsavel, setNomeResponsavel] = useState("");
+  const [nomeClinica, setNomeClinica] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
