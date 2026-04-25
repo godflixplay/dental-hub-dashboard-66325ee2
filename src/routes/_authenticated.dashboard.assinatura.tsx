@@ -135,11 +135,22 @@ function MinhaAssinaturaPage() {
                     ?.nome ?? ""}
                 </CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Próxima cobrança:{" "}
+                  {assinatura.status === "cancelada"
+                    ? "Acesso disponível até: "
+                    : "Próxima cobrança: "}
                   {assinatura.proxima_cobranca
                     ? formatDateBR(assinatura.proxima_cobranca)
                     : "—"}
                 </p>
+                {assinatura.status === "cancelada" &&
+                  assinatura.proxima_cobranca && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Sua assinatura foi cancelada, mas você continua usando
+                      tudo até o fim do período pago. Para reativar, escolha um
+                      plano novamente — seus contatos e configurações ficam
+                      salvos.
+                    </p>
+                  )}
               </div>
               <Badge variant={statusVariant(assinatura.status)}>
                 {statusLabel(assinatura.status)}
@@ -161,7 +172,7 @@ function MinhaAssinaturaPage() {
               )}
               {assinatura.status === "cancelada" && (
                 <Button onClick={() => navigate({ to: "/dashboard/assinatura/checkout" })}>
-                  Reativar
+                  Reativar com novo plano
                 </Button>
               )}
             </CardContent>

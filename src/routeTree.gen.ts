@@ -9,11 +9,15 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermosRouteImport } from './routes/termos'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LandingRouteImport } from './routes/landing'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as FaqRouteImport } from './routes/faq'
+import { Route as CookiesRouteImport } from './routes/cookies'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated.dashboard'
@@ -21,6 +25,7 @@ import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated.
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated.dashboard.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated.admin.index'
 import { Route as ApiPublicAsaasWebhookRouteImport } from './routes/api.public.asaas-webhook'
+import { Route as AuthenticatedDashboardTutorialRouteImport } from './routes/_authenticated.dashboard.tutorial'
 import { Route as AuthenticatedDashboardRecuperacaoRouteImport } from './routes/_authenticated.dashboard.recuperacao'
 import { Route as AuthenticatedDashboardLembretesRouteImport } from './routes/_authenticated.dashboard.lembretes'
 import { Route as AuthenticatedDashboardContatosRouteImport } from './routes/_authenticated.dashboard.contatos'
@@ -33,6 +38,11 @@ import { Route as AuthenticatedAdminLogsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedAdminFinanceiroRouteImport } from './routes/_authenticated.admin.financeiro'
 import { Route as AuthenticatedDashboardAssinaturaCheckoutRouteImport } from './routes/_authenticated.dashboard.assinatura.checkout'
 
+const TermosRoute = TermosRouteImport.update({
+  id: '/termos',
+  path: '/termos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
@@ -41,6 +51,11 @@ const SignupRoute = SignupRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacidadeRoute = PrivacidadeRouteImport.update({
+  id: '/privacidade',
+  path: '/privacidade',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -56,6 +71,16 @@ const LandingRoute = LandingRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaqRoute = FaqRouteImport.update({
+  id: '/faq',
+  path: '/faq',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CookiesRoute = CookiesRouteImport.update({
+  id: '/cookies',
+  path: '/cookies',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -93,6 +118,12 @@ const ApiPublicAsaasWebhookRoute = ApiPublicAsaasWebhookRouteImport.update({
   path: '/api/public/asaas-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedDashboardTutorialRoute =
+  AuthenticatedDashboardTutorialRouteImport.update({
+    id: '/tutorial',
+    path: '/tutorial',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
 const AuthenticatedDashboardRecuperacaoRoute =
   AuthenticatedDashboardRecuperacaoRouteImport.update({
     id: '/recuperacao',
@@ -161,11 +192,15 @@ const AuthenticatedDashboardAssinaturaCheckoutRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/cookies': typeof CookiesRoute
+  '/faq': typeof FaqRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
+  '/termos': typeof TermosRoute
   '/admin': typeof AuthenticatedAdminRouteWithChildren
   '/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/admin/financeiro': typeof AuthenticatedAdminFinanceiroRoute
@@ -178,6 +213,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/dashboard/tutorial': typeof AuthenticatedDashboardTutorialRoute
   '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
@@ -185,11 +221,15 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/cookies': typeof CookiesRoute
+  '/faq': typeof FaqRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
+  '/termos': typeof TermosRoute
   '/admin/financeiro': typeof AuthenticatedAdminFinanceiroRoute
   '/admin/logs': typeof AuthenticatedAdminLogsRoute
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
@@ -200,6 +240,7 @@ export interface FileRoutesByTo {
   '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/dashboard/tutorial': typeof AuthenticatedDashboardTutorialRoute
   '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
@@ -209,11 +250,15 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/cookies': typeof CookiesRoute
+  '/faq': typeof FaqRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
+  '/termos': typeof TermosRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRouteWithChildren
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRouteWithChildren
   '/_authenticated/admin/financeiro': typeof AuthenticatedAdminFinanceiroRoute
@@ -226,6 +271,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/_authenticated/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/_authenticated/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/_authenticated/dashboard/tutorial': typeof AuthenticatedDashboardTutorialRoute
   '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
@@ -235,11 +281,15 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/cookies'
+    | '/faq'
     | '/forgot-password'
     | '/landing'
     | '/login'
+    | '/privacidade'
     | '/reset-password'
     | '/signup'
+    | '/termos'
     | '/admin'
     | '/dashboard'
     | '/admin/financeiro'
@@ -252,6 +302,7 @@ export interface FileRouteTypes {
     | '/dashboard/contatos'
     | '/dashboard/lembretes'
     | '/dashboard/recuperacao'
+    | '/dashboard/tutorial'
     | '/api/public/asaas-webhook'
     | '/admin/'
     | '/dashboard/'
@@ -259,11 +310,15 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/cookies'
+    | '/faq'
     | '/forgot-password'
     | '/landing'
     | '/login'
+    | '/privacidade'
     | '/reset-password'
     | '/signup'
+    | '/termos'
     | '/admin/financeiro'
     | '/admin/logs'
     | '/admin/usuarios'
@@ -274,6 +329,7 @@ export interface FileRouteTypes {
     | '/dashboard/contatos'
     | '/dashboard/lembretes'
     | '/dashboard/recuperacao'
+    | '/dashboard/tutorial'
     | '/api/public/asaas-webhook'
     | '/admin'
     | '/dashboard'
@@ -282,11 +338,15 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/cookies'
+    | '/faq'
     | '/forgot-password'
     | '/landing'
     | '/login'
+    | '/privacidade'
     | '/reset-password'
     | '/signup'
+    | '/termos'
     | '/_authenticated/admin'
     | '/_authenticated/dashboard'
     | '/_authenticated/admin/financeiro'
@@ -299,6 +359,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/contatos'
     | '/_authenticated/dashboard/lembretes'
     | '/_authenticated/dashboard/recuperacao'
+    | '/_authenticated/dashboard/tutorial'
     | '/api/public/asaas-webhook'
     | '/_authenticated/admin/'
     | '/_authenticated/dashboard/'
@@ -308,16 +369,27 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  CookiesRoute: typeof CookiesRoute
+  FaqRoute: typeof FaqRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LandingRoute: typeof LandingRoute
   LoginRoute: typeof LoginRoute
+  PrivacidadeRoute: typeof PrivacidadeRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
+  TermosRoute: typeof TermosRoute
   ApiPublicAsaasWebhookRoute: typeof ApiPublicAsaasWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/termos': {
+      id: '/termos'
+      path: '/termos'
+      fullPath: '/termos'
+      preLoaderRoute: typeof TermosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/signup': {
       id: '/signup'
       path: '/signup'
@@ -330,6 +402,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacidade': {
+      id: '/privacidade'
+      path: '/privacidade'
+      fullPath: '/privacidade'
+      preLoaderRoute: typeof PrivacidadeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -351,6 +430,20 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/faq': {
+      id: '/faq'
+      path: '/faq'
+      fullPath: '/faq'
+      preLoaderRoute: typeof FaqRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cookies': {
+      id: '/cookies'
+      path: '/cookies'
+      fullPath: '/cookies'
+      preLoaderRoute: typeof CookiesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -401,6 +494,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/public/asaas-webhook'
       preLoaderRoute: typeof ApiPublicAsaasWebhookRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/dashboard/tutorial': {
+      id: '/_authenticated/dashboard/tutorial'
+      path: '/tutorial'
+      fullPath: '/dashboard/tutorial'
+      preLoaderRoute: typeof AuthenticatedDashboardTutorialRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
     }
     '/_authenticated/dashboard/recuperacao': {
       id: '/_authenticated/dashboard/recuperacao'
@@ -522,6 +622,7 @@ interface AuthenticatedDashboardRouteChildren {
   AuthenticatedDashboardContatosRoute: typeof AuthenticatedDashboardContatosRoute
   AuthenticatedDashboardLembretesRoute: typeof AuthenticatedDashboardLembretesRoute
   AuthenticatedDashboardRecuperacaoRoute: typeof AuthenticatedDashboardRecuperacaoRoute
+  AuthenticatedDashboardTutorialRoute: typeof AuthenticatedDashboardTutorialRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
 }
 
@@ -537,6 +638,7 @@ const AuthenticatedDashboardRouteChildren: AuthenticatedDashboardRouteChildren =
     AuthenticatedDashboardLembretesRoute: AuthenticatedDashboardLembretesRoute,
     AuthenticatedDashboardRecuperacaoRoute:
       AuthenticatedDashboardRecuperacaoRoute,
+    AuthenticatedDashboardTutorialRoute: AuthenticatedDashboardTutorialRoute,
     AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   }
 
@@ -562,11 +664,15 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  CookiesRoute: CookiesRoute,
+  FaqRoute: FaqRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LandingRoute: LandingRoute,
   LoginRoute: LoginRoute,
+  PrivacidadeRoute: PrivacidadeRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
+  TermosRoute: TermosRoute,
   ApiPublicAsaasWebhookRoute: ApiPublicAsaasWebhookRoute,
 }
 export const routeTree = rootRouteImport

@@ -620,12 +620,22 @@ function FinalCta() {
 function Footer() {
   return (
     <footer className="border-t border-border bg-background py-10">
-      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 text-sm text-muted-foreground sm:flex-row sm:px-6 lg:px-8">
-        <Logo />
-        <p>
-          © {new Date().getFullYear()} DentalHub. Todos os direitos reservados.
-        </p>
+      <div className="mx-auto flex max-w-7xl flex-col items-center gap-4 px-4 text-sm text-muted-foreground sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center justify-between gap-4 w-full sm:flex-row">
+          <Logo />
+          <p className="text-center sm:text-right">
+            © {new Date().getFullYear()} DentalHub. Todos os direitos reservados.
+          </p>
+        </div>
+        <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs">
+          <a href="/faq" className="hover:text-primary">Perguntas frequentes</a>
+          <a href="/privacidade" className="hover:text-primary">Privacidade</a>
+          <a href="/cookies" className="hover:text-primary">Cookies</a>
+          <a href="/termos" className="hover:text-primary">Termos de uso</a>
+          <a href="mailto:contato@dentalhub.com.br" className="hover:text-primary">Contato</a>
+        </div>
       </div>
     </footer>
   );
 }
+
