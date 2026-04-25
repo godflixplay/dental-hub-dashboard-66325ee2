@@ -11,13 +11,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
-import { Cake, Smartphone, Upload, Send, Sparkles } from "lucide-react";
+import { Cake, Smartphone, Upload, Send, Sparkles, CreditCard } from "lucide-react";
 
 const STEPS = [
   {
+    icon: CreditCard,
+    title: "Escolha um plano e pague",
+    desc: "PIX ou cartão. A partir de R$ 37/mês. Sem isso o sistema fica bloqueado.",
+  },
+  {
     icon: Smartphone,
     title: "Conecte seu WhatsApp",
-    desc: "Aponte a câmera do celular para um QR Code, igual o WhatsApp Web.",
+    desc: "Aponte a câmera do celular para um QR Code, igual o WhatsApp Web. É seu próprio número que envia.",
   },
   {
     icon: Upload,
@@ -97,8 +102,9 @@ export function WelcomeTutorialModal() {
             Bem-vindo ao Dental Hub!
           </DialogTitle>
           <DialogDescription>
-            Em 4 passos rápidos você automatiza as mensagens de aniversário dos
-            seus pacientes.
+            Em 5 passos rápidos você automatiza as mensagens de aniversário dos
+            seus pacientes. <strong>Comece pelo plano</strong> — é o que
+            destrava o sistema.
           </DialogDescription>
         </DialogHeader>
 
