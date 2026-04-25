@@ -40,6 +40,34 @@ interface PingResult {
 }
 
 function AdminFinanceiro() {
+  const { session } = useAuth();
+  const accessToken = session?.access_token;
+  const [pinging, setPinging] = useState(false);
+  const [pingResult, setPingResult] = useState<PingResult | null>(null);
+
+  async function handlePing() {
+    if (!accessToken) {
+      toast.error("Sessão expirada");
+      return;
+    }
+    setPinging(true);
+    try {
+      const res = (await pingAsaas({ data: { accessToken } })) as PingResult;
+      setPingResult(res);
+      if (res.ok) {
+        toast.success(`Conectado ao Asaas (${res.env})`);
+      } else {
+        toast.error(`Falha: ${res.error ?? "erro desconhecido"}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPingResult({ ok: false, env: "?", baseUrl: "?", error: msg });
+      toast.error(msg);
+    } finally {
+      setPinging(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
