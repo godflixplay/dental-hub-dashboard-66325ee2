@@ -175,6 +175,9 @@ export const criarAssinatura = createServerFn({ method: "POST" })
     }
 
     // 1) Criar/recuperar customer no Asaas
+    // notificationDisabled=true desativa todos os emails/SMS do Asaas para
+    // este cliente (lembrete de vencimento, recibo de pagamento, etc.).
+    // O usuário acompanha a cobrança apenas pelo app Dental Hub.
     const customer = (await asaasRequest("/customers", {
       method: "POST",
       body: JSON.stringify({
@@ -183,6 +186,7 @@ export const criarAssinatura = createServerFn({ method: "POST" })
         cpfCnpj: data.cpfCnpj.replace(/\D/g, ""),
         phone: data.telefone,
         externalReference: userId,
+        notificationDisabled: true,
       }),
     })) as AsaasCustomer;
 
