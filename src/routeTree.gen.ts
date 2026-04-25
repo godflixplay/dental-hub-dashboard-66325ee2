@@ -20,6 +20,7 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated.admin'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated.dashboard.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated.admin.index'
+import { Route as ApiPublicAsaasWebhookRouteImport } from './routes/api.public.asaas-webhook'
 import { Route as AuthenticatedDashboardRecuperacaoRouteImport } from './routes/_authenticated.dashboard.recuperacao'
 import { Route as AuthenticatedDashboardLembretesRouteImport } from './routes/_authenticated.dashboard.lembretes'
 import { Route as AuthenticatedDashboardContatosRouteImport } from './routes/_authenticated.dashboard.contatos'
@@ -84,6 +85,11 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
+} as any)
+const ApiPublicAsaasWebhookRoute = ApiPublicAsaasWebhookRouteImport.update({
+  id: '/api/public/asaas-webhook',
+  path: '/api/public/asaas-webhook',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedDashboardRecuperacaoRoute =
   AuthenticatedDashboardRecuperacaoRouteImport.update({
@@ -157,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
 }
@@ -176,6 +183,7 @@ export interface FileRoutesByTo {
   '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
 }
@@ -199,6 +207,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/_authenticated/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/_authenticated/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
 }
@@ -222,6 +231,7 @@ export interface FileRouteTypes {
     | '/dashboard/contatos'
     | '/dashboard/lembretes'
     | '/dashboard/recuperacao'
+    | '/api/public/asaas-webhook'
     | '/admin/'
     | '/dashboard/'
   fileRoutesByTo: FileRoutesByTo
@@ -241,6 +251,7 @@ export interface FileRouteTypes {
     | '/dashboard/contatos'
     | '/dashboard/lembretes'
     | '/dashboard/recuperacao'
+    | '/api/public/asaas-webhook'
     | '/admin'
     | '/dashboard'
   id:
@@ -263,6 +274,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/contatos'
     | '/_authenticated/dashboard/lembretes'
     | '/_authenticated/dashboard/recuperacao'
+    | '/api/public/asaas-webhook'
     | '/_authenticated/admin/'
     | '/_authenticated/dashboard/'
   fileRoutesById: FileRoutesById
@@ -275,6 +287,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
+  ApiPublicAsaasWebhookRoute: typeof ApiPublicAsaasWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -355,6 +368,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
+    }
+    '/api/public/asaas-webhook': {
+      id: '/api/public/asaas-webhook'
+      path: '/api/public/asaas-webhook'
+      fullPath: '/api/public/asaas-webhook'
+      preLoaderRoute: typeof ApiPublicAsaasWebhookRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/dashboard/recuperacao': {
       id: '/_authenticated/dashboard/recuperacao'
@@ -489,6 +509,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
+  ApiPublicAsaasWebhookRoute: ApiPublicAsaasWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
