@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as LandingRouteImport } from './routes/landing'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
@@ -19,15 +20,18 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated.admin'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated.dashboard.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated.admin.index'
+import { Route as ApiPublicAsaasWebhookRouteImport } from './routes/api.public.asaas-webhook'
 import { Route as AuthenticatedDashboardRecuperacaoRouteImport } from './routes/_authenticated.dashboard.recuperacao'
 import { Route as AuthenticatedDashboardLembretesRouteImport } from './routes/_authenticated.dashboard.lembretes'
 import { Route as AuthenticatedDashboardContatosRouteImport } from './routes/_authenticated.dashboard.contatos'
 import { Route as AuthenticatedDashboardCampanhasRouteImport } from './routes/_authenticated.dashboard.campanhas'
+import { Route as AuthenticatedDashboardAssinaturaRouteImport } from './routes/_authenticated.dashboard.assinatura'
 import { Route as AuthenticatedDashboardAniversariosRouteImport } from './routes/_authenticated.dashboard.aniversarios'
 import { Route as AuthenticatedDashboardAdminRouteImport } from './routes/_authenticated.dashboard.admin'
 import { Route as AuthenticatedAdminUsuariosRouteImport } from './routes/_authenticated.admin.usuarios'
 import { Route as AuthenticatedAdminLogsRouteImport } from './routes/_authenticated.admin.logs'
 import { Route as AuthenticatedAdminFinanceiroRouteImport } from './routes/_authenticated.admin.financeiro'
+import { Route as AuthenticatedDashboardAssinaturaCheckoutRouteImport } from './routes/_authenticated.dashboard.assinatura.checkout'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -42,6 +46,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LandingRoute = LandingRouteImport.update({
+  id: '/landing',
+  path: '/landing',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
@@ -79,6 +88,11 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedAdminRoute,
 } as any)
+const ApiPublicAsaasWebhookRoute = ApiPublicAsaasWebhookRouteImport.update({
+  id: '/api/public/asaas-webhook',
+  path: '/api/public/asaas-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedDashboardRecuperacaoRoute =
   AuthenticatedDashboardRecuperacaoRouteImport.update({
     id: '/recuperacao',
@@ -101,6 +115,12 @@ const AuthenticatedDashboardCampanhasRoute =
   AuthenticatedDashboardCampanhasRouteImport.update({
     id: '/campanhas',
     path: '/campanhas',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
+const AuthenticatedDashboardAssinaturaRoute =
+  AuthenticatedDashboardAssinaturaRouteImport.update({
+    id: '/assinatura',
+    path: '/assinatura',
     getParentRoute: () => AuthenticatedDashboardRoute,
   } as any)
 const AuthenticatedDashboardAniversariosRoute =
@@ -132,10 +152,17 @@ const AuthenticatedAdminFinanceiroRoute =
     path: '/financeiro',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedDashboardAssinaturaCheckoutRoute =
+  AuthenticatedDashboardAssinaturaCheckoutRouteImport.update({
+    id: '/checkout',
+    path: '/checkout',
+    getParentRoute: () => AuthenticatedDashboardAssinaturaRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -146,16 +173,20 @@ export interface FileRoutesByFullPath {
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
+  '/dashboard/assinatura': typeof AuthenticatedDashboardAssinaturaRouteWithChildren
   '/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
   '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/dashboard/assinatura/checkout': typeof AuthenticatedDashboardAssinaturaCheckoutRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -164,18 +195,22 @@ export interface FileRoutesByTo {
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
+  '/dashboard/assinatura': typeof AuthenticatedDashboardAssinaturaRouteWithChildren
   '/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
   '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
+  '/dashboard/assinatura/checkout': typeof AuthenticatedDashboardAssinaturaCheckoutRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
+  '/landing': typeof LandingRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -186,18 +221,22 @@ export interface FileRoutesById {
   '/_authenticated/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/_authenticated/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/_authenticated/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
+  '/_authenticated/dashboard/assinatura': typeof AuthenticatedDashboardAssinaturaRouteWithChildren
   '/_authenticated/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
   '/_authenticated/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/_authenticated/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/_authenticated/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/_authenticated/dashboard/assinatura/checkout': typeof AuthenticatedDashboardAssinaturaCheckoutRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/forgot-password'
+    | '/landing'
     | '/login'
     | '/reset-password'
     | '/signup'
@@ -208,16 +247,20 @@ export interface FileRouteTypes {
     | '/admin/usuarios'
     | '/dashboard/admin'
     | '/dashboard/aniversarios'
+    | '/dashboard/assinatura'
     | '/dashboard/campanhas'
     | '/dashboard/contatos'
     | '/dashboard/lembretes'
     | '/dashboard/recuperacao'
+    | '/api/public/asaas-webhook'
     | '/admin/'
     | '/dashboard/'
+    | '/dashboard/assinatura/checkout'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/forgot-password'
+    | '/landing'
     | '/login'
     | '/reset-password'
     | '/signup'
@@ -226,17 +269,21 @@ export interface FileRouteTypes {
     | '/admin/usuarios'
     | '/dashboard/admin'
     | '/dashboard/aniversarios'
+    | '/dashboard/assinatura'
     | '/dashboard/campanhas'
     | '/dashboard/contatos'
     | '/dashboard/lembretes'
     | '/dashboard/recuperacao'
+    | '/api/public/asaas-webhook'
     | '/admin'
     | '/dashboard'
+    | '/dashboard/assinatura/checkout'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/forgot-password'
+    | '/landing'
     | '/login'
     | '/reset-password'
     | '/signup'
@@ -247,21 +294,26 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/usuarios'
     | '/_authenticated/dashboard/admin'
     | '/_authenticated/dashboard/aniversarios'
+    | '/_authenticated/dashboard/assinatura'
     | '/_authenticated/dashboard/campanhas'
     | '/_authenticated/dashboard/contatos'
     | '/_authenticated/dashboard/lembretes'
     | '/_authenticated/dashboard/recuperacao'
+    | '/api/public/asaas-webhook'
     | '/_authenticated/admin/'
     | '/_authenticated/dashboard/'
+    | '/_authenticated/dashboard/assinatura/checkout'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
+  LandingRoute: typeof LandingRoute
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
+  ApiPublicAsaasWebhookRoute: typeof ApiPublicAsaasWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -285,6 +337,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/landing': {
+      id: '/landing'
+      path: '/landing'
+      fullPath: '/landing'
+      preLoaderRoute: typeof LandingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/forgot-password': {
@@ -336,6 +395,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/api/public/asaas-webhook': {
+      id: '/api/public/asaas-webhook'
+      path: '/api/public/asaas-webhook'
+      fullPath: '/api/public/asaas-webhook'
+      preLoaderRoute: typeof ApiPublicAsaasWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/dashboard/recuperacao': {
       id: '/_authenticated/dashboard/recuperacao'
       path: '/recuperacao'
@@ -362,6 +428,13 @@ declare module '@tanstack/react-router' {
       path: '/campanhas'
       fullPath: '/dashboard/campanhas'
       preLoaderRoute: typeof AuthenticatedDashboardCampanhasRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
+    '/_authenticated/dashboard/assinatura': {
+      id: '/_authenticated/dashboard/assinatura'
+      path: '/assinatura'
+      fullPath: '/dashboard/assinatura'
+      preLoaderRoute: typeof AuthenticatedDashboardAssinaturaRouteImport
       parentRoute: typeof AuthenticatedDashboardRoute
     }
     '/_authenticated/dashboard/aniversarios': {
@@ -399,6 +472,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminFinanceiroRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/dashboard/assinatura/checkout': {
+      id: '/_authenticated/dashboard/assinatura/checkout'
+      path: '/checkout'
+      fullPath: '/dashboard/assinatura/checkout'
+      preLoaderRoute: typeof AuthenticatedDashboardAssinaturaCheckoutRouteImport
+      parentRoute: typeof AuthenticatedDashboardAssinaturaRoute
+    }
   }
 }
 
@@ -419,9 +499,25 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
 const AuthenticatedAdminRouteWithChildren =
   AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
 
+interface AuthenticatedDashboardAssinaturaRouteChildren {
+  AuthenticatedDashboardAssinaturaCheckoutRoute: typeof AuthenticatedDashboardAssinaturaCheckoutRoute
+}
+
+const AuthenticatedDashboardAssinaturaRouteChildren: AuthenticatedDashboardAssinaturaRouteChildren =
+  {
+    AuthenticatedDashboardAssinaturaCheckoutRoute:
+      AuthenticatedDashboardAssinaturaCheckoutRoute,
+  }
+
+const AuthenticatedDashboardAssinaturaRouteWithChildren =
+  AuthenticatedDashboardAssinaturaRoute._addFileChildren(
+    AuthenticatedDashboardAssinaturaRouteChildren,
+  )
+
 interface AuthenticatedDashboardRouteChildren {
   AuthenticatedDashboardAdminRoute: typeof AuthenticatedDashboardAdminRoute
   AuthenticatedDashboardAniversariosRoute: typeof AuthenticatedDashboardAniversariosRoute
+  AuthenticatedDashboardAssinaturaRoute: typeof AuthenticatedDashboardAssinaturaRouteWithChildren
   AuthenticatedDashboardCampanhasRoute: typeof AuthenticatedDashboardCampanhasRoute
   AuthenticatedDashboardContatosRoute: typeof AuthenticatedDashboardContatosRoute
   AuthenticatedDashboardLembretesRoute: typeof AuthenticatedDashboardLembretesRoute
@@ -434,6 +530,8 @@ const AuthenticatedDashboardRouteChildren: AuthenticatedDashboardRouteChildren =
     AuthenticatedDashboardAdminRoute: AuthenticatedDashboardAdminRoute,
     AuthenticatedDashboardAniversariosRoute:
       AuthenticatedDashboardAniversariosRoute,
+    AuthenticatedDashboardAssinaturaRoute:
+      AuthenticatedDashboardAssinaturaRouteWithChildren,
     AuthenticatedDashboardCampanhasRoute: AuthenticatedDashboardCampanhasRoute,
     AuthenticatedDashboardContatosRoute: AuthenticatedDashboardContatosRoute,
     AuthenticatedDashboardLembretesRoute: AuthenticatedDashboardLembretesRoute,
@@ -465,9 +563,11 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
+  LandingRoute: LandingRoute,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
+  ApiPublicAsaasWebhookRoute: ApiPublicAsaasWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,5 +1,9 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { FileText, AlertTriangle, CheckCircle, Clock } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
+import { adminLogs } from "@/utils/admin.functions";
+import { AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -17,12 +21,31 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatDateTimeBR } from "@/lib/date-format";
 
 export const Route = createFileRoute("/_authenticated/admin/logs")({
   component: AdminLogs,
 });
 
 function AdminLogs() {
+  const { session } = useAuth();
+  const accessToken = session?.access_token ?? "";
+  const [filtro, setFiltro] = useState<"todos" | "enviado" | "falha_envio">(
+    "todos",
+  );
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-logs", filtro],
+    enabled: !!accessToken,
+    queryFn: () =>
+      adminLogs({ data: { accessToken, limit: 100, filtroStatus: filtro } }),
+    refetchInterval: 30_000,
+  });
+
+  const envios = data?.envios ?? [];
+  const totalEnviados = envios.filter((e) => e.status === "enviado").length;
+  const totalErros = envios.filter((e) => e.status === "falha_envio").length;
+
   return (
     <div className="space-y-6">
       <div>
@@ -30,59 +53,45 @@ function AdminLogs() {
           Monitoramento do Sistema
         </h1>
         <p className="mt-1 text-muted-foreground">
-          Logs de envios, erros e automações
+          Logs de envios, erros e automações (últimos 100 registros)
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Enviados</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-500" />
+            <CheckCircle className="h-4 w-4 text-accent" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">—</div>
+            <div className="text-2xl font-bold">{totalEnviados}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Erros</CardTitle>
+            <CardTitle className="text-sm font-medium">Falhas</CardTitle>
             <AlertTriangle className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">—</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Pendentes</CardTitle>
-            <Clock className="h-4 w-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">—</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">
-              Falhas WhatsApp
-            </CardTitle>
-            <AlertTriangle className="h-4 w-4 text-orange-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">—</div>
+            <div className="text-2xl font-bold">{totalErros}</div>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="envios" className="space-y-4">
+      <Tabs
+        value={filtro}
+        onValueChange={(v) =>
+          setFiltro(v as "todos" | "enviado" | "falha_envio")
+        }
+        className="space-y-4"
+      >
         <TabsList>
-          <TabsTrigger value="envios">Envios</TabsTrigger>
-          <TabsTrigger value="erros">Erros</TabsTrigger>
-          <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
+          <TabsTrigger value="todos">Todos</TabsTrigger>
+          <TabsTrigger value="enviado">Enviados</TabsTrigger>
+          <TabsTrigger value="falha_envio">Falhas</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="envios">
+        <TabsContent value={filtro}>
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Logs de Envio</CardTitle>
@@ -91,54 +100,46 @@ function AdminLogs() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Usuário</TableHead>
-                    <TableHead>Telefone</TableHead>
-                    <TableHead>Data</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell
-                      colSpan={4}
-                      className="text-center text-muted-foreground py-8"
-                    >
-                      Nenhum log de envio registrado
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="erros">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Erros e Falhas</CardTitle>
-              <CardDescription>
-                Erros de envio e falhas de automação
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex h-32 items-center justify-center text-muted-foreground">
-              Nenhum erro registrado
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="whatsapp">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Conexões WhatsApp</CardTitle>
-              <CardDescription>
-                Status das instâncias de WhatsApp dos usuários
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex h-32 items-center justify-center text-muted-foreground">
-              Nenhuma conexão registrada
+              {isLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                </div>
+              ) : envios.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  Nenhum log encontrado
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Data</TableHead>
+                      <TableHead>Usuário</TableHead>
+                      <TableHead>Telefone</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {envios.map((e) => (
+                      <TableRow key={e.id}>
+                        <TableCell className="text-muted-foreground">
+                          {formatDateTimeBR(e.created_at)}
+                        </TableCell>
+                        <TableCell>{e.email}</TableCell>
+                        <TableCell>{e.telefone}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              e.status === "enviado" ? "default" : "destructive"
+                            }
+                          >
+                            {e.status === "enviado" ? "Enviado" : "Falha"}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

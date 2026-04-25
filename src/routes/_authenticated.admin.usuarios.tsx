@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { supabase } from "@/integrations/supabase/client";
-import { Search, User, MoreHorizontal } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
+import { adminUsuarios } from "@/utils/admin.functions";
+import { Search, User, MoreHorizontal, Loader2 } from "lucide-react";
 import {
   Card,
-  CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -27,11 +28,14 @@ import {
 } from "@/components/ui/dialog";
 import { formatDateBR } from "@/lib/date-format";
 
-interface Profile {
+interface UsuarioRow {
   id: string;
   email: string;
   role: string;
   created_at: string;
+  contatos: number;
+  whatsapp_status: string;
+  plano: string;
 }
 
 export const Route = createFileRoute("/_authenticated/admin/usuarios")({
@@ -39,26 +43,19 @@ export const Route = createFileRoute("/_authenticated/admin/usuarios")({
 });
 
 function AdminUsuarios() {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { session } = useAuth();
+  const accessToken = session?.access_token ?? "";
   const [search, setSearch] = useState("");
-  const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UsuarioRow | null>(null);
 
-  useEffect(() => {
-    fetchProfiles();
-  }, []);
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-usuarios"],
+    enabled: !!accessToken,
+    queryFn: () => adminUsuarios({ data: { accessToken } }),
+  });
 
-  const fetchProfiles = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .order("created_at", { ascending: false });
-    setProfiles(data ?? []);
-    setLoading(false);
-  };
-
-  const filtered = profiles.filter(
+  const usuarios = (data?.usuarios ?? []) as UsuarioRow[];
+  const filtered = usuarios.filter(
     (p) =>
       p.email.toLowerCase().includes(search.toLowerCase()) ||
       p.role.toLowerCase().includes(search.toLowerCase()),
@@ -71,7 +68,7 @@ function AdminUsuarios() {
           Gestão de Usuários
         </h1>
         <p className="mt-1 text-muted-foreground">
-          Gerencie os usuários da plataforma
+          {usuarios.length} usuário(s) cadastrado(s)
         </p>
       </div>
 
@@ -85,9 +82,9 @@ function AdminUsuarios() {
         />
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="flex items-center justify-center py-12">
-          <div className="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
       ) : (
         <Card>
@@ -116,9 +113,7 @@ function AdminUsuarios() {
               ) : (
                 filtered.map((profile) => (
                   <TableRow key={profile.id}>
-                    <TableCell className="font-medium">
-                      {profile.email}
-                    </TableCell>
+                    <TableCell className="font-medium">{profile.email}</TableCell>
                     <TableCell>
                       <Badge
                         variant={
@@ -132,11 +127,27 @@ function AdminUsuarios() {
                       {formatDateBR(profile.created_at)}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">Desconectado</Badge>
+                      <Badge
+                        variant={
+                          profile.whatsapp_status === "connected"
+                            ? "default"
+                            : "outline"
+                        }
+                      >
+                        {profile.whatsapp_status === "connected"
+                          ? "Conectado"
+                          : "Desconectado"}
+                      </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">—</TableCell>
+                    <TableCell>{profile.contatos}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">Gratuito</Badge>
+                      <Badge
+                        variant={
+                          profile.plano === "Gratuito" ? "outline" : "default"
+                        }
+                      >
+                        {profile.plano}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <Button
@@ -155,10 +166,7 @@ function AdminUsuarios() {
         </Card>
       )}
 
-      <Dialog
-        open={!!selectedUser}
-        onOpenChange={() => setSelectedUser(null)}
-      >
+      <Dialog open={!!selectedUser} onOpenChange={() => setSelectedUser(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -184,52 +192,38 @@ function AdminUsuarios() {
                   </Badge>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Data de Cadastro</p>
+                  <p className="text-muted-foreground">Cadastro</p>
                   <p className="font-medium">
                     {formatDateBR(selectedUser.created_at)}
                   </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Plano</p>
-                  <Badge variant="outline">Gratuito</Badge>
+                  <Badge
+                    variant={
+                      selectedUser.plano === "Gratuito" ? "outline" : "default"
+                    }
+                  >
+                    {selectedUser.plano}
+                  </Badge>
                 </div>
                 <div>
                   <p className="text-muted-foreground">WhatsApp</p>
-                  <Badge variant="outline">Desconectado</Badge>
+                  <Badge
+                    variant={
+                      selectedUser.whatsapp_status === "connected"
+                        ? "default"
+                        : "outline"
+                    }
+                  >
+                    {selectedUser.whatsapp_status === "connected"
+                      ? "Conectado"
+                      : "Desconectado"}
+                  </Badge>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Contatos</p>
-                  <p className="font-medium">0</p>
-                </div>
-              </div>
-
-              <div className="border-t pt-4">
-                <p className="mb-2 text-sm font-medium">Serviços</p>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">Aniversários</Badge>
-                  <Badge variant="outline">Campanhas (em breve)</Badge>
-                  <Badge variant="outline">Lembretes (em breve)</Badge>
-                  <Badge variant="outline">Recuperação (em breve)</Badge>
-                </div>
-              </div>
-
-              <div className="border-t pt-4">
-                <p className="mb-2 text-sm font-medium">
-                  Ações Administrativas
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline">
-                    Importar Contatos
-                  </Button>
-                  <Button size="sm" variant="outline">
-                    Configurar WhatsApp
-                  </Button>
-                  <Button size="sm" variant="outline">
-                    Alterar Plano
-                  </Button>
-                  <Button size="sm" variant="destructive">
-                    Desativar Usuário
-                  </Button>
+                  <p className="font-medium">{selectedUser.contatos}</p>
                 </div>
               </div>
             </div>
