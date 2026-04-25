@@ -119,6 +119,49 @@ export const getMinhaAssinatura = createServerFn({ method: "POST" })
   });
 
 // ============================================================
+// pingAsaas — testa conectividade/credencial chamando /myAccount
+// (Apenas admin pode chamar.)
+// ============================================================
+export const pingAsaas = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ accessToken: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { supabase, userId } = await getAuthedSupabase(data.accessToken);
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profile?.role !== "admin") {
+      throw new Error("Apenas admin pode executar este teste");
+    }
+    const { env, baseUrl } = getAsaasConfig();
+    try {
+      const account = (await asaasRequest("/myAccount")) as {
+        email?: string;
+        name?: string;
+        walletId?: string;
+      };
+      return {
+        ok: true,
+        env,
+        baseUrl,
+        account: {
+          email: account.email ?? null,
+          name: account.name ?? null,
+          walletId: account.walletId ?? null,
+        },
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        env,
+        baseUrl,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  });
+
+// ============================================================
 // listarPlanos
 // ============================================================
 export const listarPlanos = createServerFn({ method: "POST" })
@@ -175,6 +218,9 @@ export const criarAssinatura = createServerFn({ method: "POST" })
     }
 
     // 1) Criar/recuperar customer no Asaas
+    // notificationDisabled=true desativa todos os emails/SMS do Asaas para
+    // este cliente (lembrete de vencimento, recibo de pagamento, etc.).
+    // O usuário acompanha a cobrança apenas pelo app Dental Hub.
     const customer = (await asaasRequest("/customers", {
       method: "POST",
       body: JSON.stringify({
@@ -183,6 +229,7 @@ export const criarAssinatura = createServerFn({ method: "POST" })
         cpfCnpj: data.cpfCnpj.replace(/\D/g, ""),
         phone: data.telefone,
         externalReference: userId,
+        notificationDisabled: true,
       }),
     })) as AsaasCustomer;
 
