@@ -196,7 +196,7 @@ function Hero() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     Hoje, 15 mensagens foram enviadas.
                   </p>
-                  <Badge className="mt-2 gap-1 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15">
+                  <Badge className="mt-2 gap-1 bg-accent/10 text-accent hover:bg-accent/15">
                     <Check className="h-3 w-3" /> Sucesso
                   </Badge>
                 </div>
@@ -210,7 +210,7 @@ function Hero() {
                 Pacientes ativos
               </div>
               <div className="text-3xl font-bold tracking-tight">1.248</div>
-              <div className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+              <div className="flex items-center gap-1 text-xs font-medium text-accent">
                 <TrendingUp className="h-3 w-3" />
                 +32 este mês
               </div>
@@ -387,7 +387,7 @@ function ServiceCard({
         <ul className="mt-4 space-y-2">
           {bullets.map((b) => (
             <li key={b} className="flex items-center gap-2 text-sm">
-              <Check className="h-4 w-4 text-emerald-600" />
+              <Check className="h-4 w-4 text-accent" />
               <span>{b}</span>
             </li>
           ))}
