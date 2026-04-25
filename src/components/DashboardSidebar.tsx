@@ -1,4 +1,4 @@
-import { Cake, Megaphone, Bell, UserCheck, LayoutDashboard, LogOut, Shield, Users, CreditCard } from "lucide-react";
+import { Cake, Megaphone, Bell, UserCheck, LayoutDashboard, LogOut, Shield, Users, CreditCard, LifeBuoy, Mail, MessageCircle } from "lucide-react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -15,6 +15,15 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+
+const SUPPORT_EMAIL = "contato@dentalhub.com.br";
+const SUPPORT_WHATSAPP_DISPLAY = "(21) 98108-9100";
+const SUPPORT_WHATSAPP_LINK = "https://wa.me/5521981089100";
 
 const clientMenuItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
@@ -76,6 +85,56 @@ export function DashboardSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+
+              {/* Suporte */}
+              <SidebarMenuItem>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <SidebarMenuButton tooltip="Suporte">
+                      <LifeBuoy className="h-4 w-4" />
+                      {!collapsed && <span>Suporte</span>}
+                    </SidebarMenuButton>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="right"
+                    align="start"
+                    className="w-72 space-y-3 p-4"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        Fale com o suporte
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Estamos aqui para ajudar.
+                      </p>
+                    </div>
+                    <a
+                      href={`mailto:${SUPPORT_EMAIL}`}
+                      className="flex items-start gap-2 rounded-md p-2 hover:bg-muted"
+                    >
+                      <Mail className="mt-0.5 h-4 w-4 text-primary" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">E-mail</p>
+                        <p className="text-sm font-medium">{SUPPORT_EMAIL}</p>
+                      </div>
+                    </a>
+                    <a
+                      href={SUPPORT_WHATSAPP_LINK}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-start gap-2 rounded-md p-2 hover:bg-muted"
+                    >
+                      <MessageCircle className="mt-0.5 h-4 w-4 text-primary" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">WhatsApp</p>
+                        <p className="text-sm font-medium">
+                          {SUPPORT_WHATSAPP_DISPLAY}
+                        </p>
+                      </div>
+                    </a>
+                  </PopoverContent>
+                </Popover>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
