@@ -1,7 +1,29 @@
 -- =============================================================
 -- MIGRATION: profiles.telefone_contato + tabela notificacoes
+--           + whatsapp_instances.updated_at / project_tag
 -- Rode este SQL no SQL Editor do Supabase externo.
 -- =============================================================
+
+-- 0) Colunas faltantes em whatsapp_instances (necessárias p/ admin)
+ALTER TABLE public.whatsapp_instances
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+ALTER TABLE public.whatsapp_instances
+  ADD COLUMN IF NOT EXISTS project_tag text;
+
+-- Trigger para manter updated_at atualizado
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_whatsapp_instances_updated_at ON public.whatsapp_instances;
+CREATE TRIGGER trg_whatsapp_instances_updated_at
+  BEFORE UPDATE ON public.whatsapp_instances
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 -- 1) Telefone/WhatsApp de contato no profile
 ALTER TABLE public.profiles
