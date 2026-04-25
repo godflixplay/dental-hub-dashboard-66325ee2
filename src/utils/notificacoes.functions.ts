@@ -28,8 +28,15 @@ export const listNotificacoes = createServerFn({ method: "POST" })
       .select("id, titulo, mensagem, tipo, link, lida, audiencia, created_at")
       .order("created_at", { ascending: false })
       .limit(30);
-    if (error) throw new Error(error.message);
-    return { notificacoes: rows ?? [] };
+    if (error) {
+      // Se a tabela ainda não foi criada, devolve vazio em vez de derrubar a UI
+      const msg = error.message?.toLowerCase() ?? "";
+      if (msg.includes("notificacoes") || msg.includes("schema cache")) {
+        return { notificacoes: [], migrationPending: true as const };
+      }
+      throw new Error(error.message);
+    }
+    return { notificacoes: rows ?? [], migrationPending: false as const };
   });
 
 // Marca uma ou todas como lidas
