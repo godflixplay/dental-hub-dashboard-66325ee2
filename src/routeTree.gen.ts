@@ -25,11 +25,13 @@ import { Route as AuthenticatedDashboardRecuperacaoRouteImport } from './routes/
 import { Route as AuthenticatedDashboardLembretesRouteImport } from './routes/_authenticated.dashboard.lembretes'
 import { Route as AuthenticatedDashboardContatosRouteImport } from './routes/_authenticated.dashboard.contatos'
 import { Route as AuthenticatedDashboardCampanhasRouteImport } from './routes/_authenticated.dashboard.campanhas'
+import { Route as AuthenticatedDashboardAssinaturaRouteImport } from './routes/_authenticated.dashboard.assinatura'
 import { Route as AuthenticatedDashboardAniversariosRouteImport } from './routes/_authenticated.dashboard.aniversarios'
 import { Route as AuthenticatedDashboardAdminRouteImport } from './routes/_authenticated.dashboard.admin'
 import { Route as AuthenticatedAdminUsuariosRouteImport } from './routes/_authenticated.admin.usuarios'
 import { Route as AuthenticatedAdminLogsRouteImport } from './routes/_authenticated.admin.logs'
 import { Route as AuthenticatedAdminFinanceiroRouteImport } from './routes/_authenticated.admin.financeiro'
+import { Route as AuthenticatedDashboardAssinaturaCheckoutRouteImport } from './routes/_authenticated.dashboard.assinatura.checkout'
 
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
@@ -115,6 +117,12 @@ const AuthenticatedDashboardCampanhasRoute =
     path: '/campanhas',
     getParentRoute: () => AuthenticatedDashboardRoute,
   } as any)
+const AuthenticatedDashboardAssinaturaRoute =
+  AuthenticatedDashboardAssinaturaRouteImport.update({
+    id: '/assinatura',
+    path: '/assinatura',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
 const AuthenticatedDashboardAniversariosRoute =
   AuthenticatedDashboardAniversariosRouteImport.update({
     id: '/aniversarios',
@@ -144,6 +152,12 @@ const AuthenticatedAdminFinanceiroRoute =
     path: '/financeiro',
     getParentRoute: () => AuthenticatedAdminRoute,
   } as any)
+const AuthenticatedDashboardAssinaturaCheckoutRoute =
+  AuthenticatedDashboardAssinaturaCheckoutRouteImport.update({
+    id: '/checkout',
+    path: '/checkout',
+    getParentRoute: () => AuthenticatedDashboardAssinaturaRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -159,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
+  '/dashboard/assinatura': typeof AuthenticatedDashboardAssinaturaRouteWithChildren
   '/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
   '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
@@ -166,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/dashboard/assinatura/checkout': typeof AuthenticatedDashboardAssinaturaCheckoutRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -179,6 +195,7 @@ export interface FileRoutesByTo {
   '/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
+  '/dashboard/assinatura': typeof AuthenticatedDashboardAssinaturaRouteWithChildren
   '/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
   '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
@@ -186,6 +203,7 @@ export interface FileRoutesByTo {
   '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
+  '/dashboard/assinatura/checkout': typeof AuthenticatedDashboardAssinaturaCheckoutRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -203,6 +221,7 @@ export interface FileRoutesById {
   '/_authenticated/admin/usuarios': typeof AuthenticatedAdminUsuariosRoute
   '/_authenticated/dashboard/admin': typeof AuthenticatedDashboardAdminRoute
   '/_authenticated/dashboard/aniversarios': typeof AuthenticatedDashboardAniversariosRoute
+  '/_authenticated/dashboard/assinatura': typeof AuthenticatedDashboardAssinaturaRouteWithChildren
   '/_authenticated/dashboard/campanhas': typeof AuthenticatedDashboardCampanhasRoute
   '/_authenticated/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/_authenticated/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
@@ -210,6 +229,7 @@ export interface FileRoutesById {
   '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
+  '/_authenticated/dashboard/assinatura/checkout': typeof AuthenticatedDashboardAssinaturaCheckoutRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -227,6 +247,7 @@ export interface FileRouteTypes {
     | '/admin/usuarios'
     | '/dashboard/admin'
     | '/dashboard/aniversarios'
+    | '/dashboard/assinatura'
     | '/dashboard/campanhas'
     | '/dashboard/contatos'
     | '/dashboard/lembretes'
@@ -234,6 +255,7 @@ export interface FileRouteTypes {
     | '/api/public/asaas-webhook'
     | '/admin/'
     | '/dashboard/'
+    | '/dashboard/assinatura/checkout'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -247,6 +269,7 @@ export interface FileRouteTypes {
     | '/admin/usuarios'
     | '/dashboard/admin'
     | '/dashboard/aniversarios'
+    | '/dashboard/assinatura'
     | '/dashboard/campanhas'
     | '/dashboard/contatos'
     | '/dashboard/lembretes'
@@ -254,6 +277,7 @@ export interface FileRouteTypes {
     | '/api/public/asaas-webhook'
     | '/admin'
     | '/dashboard'
+    | '/dashboard/assinatura/checkout'
   id:
     | '__root__'
     | '/'
@@ -270,6 +294,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin/usuarios'
     | '/_authenticated/dashboard/admin'
     | '/_authenticated/dashboard/aniversarios'
+    | '/_authenticated/dashboard/assinatura'
     | '/_authenticated/dashboard/campanhas'
     | '/_authenticated/dashboard/contatos'
     | '/_authenticated/dashboard/lembretes'
@@ -277,6 +302,7 @@ export interface FileRouteTypes {
     | '/api/public/asaas-webhook'
     | '/_authenticated/admin/'
     | '/_authenticated/dashboard/'
+    | '/_authenticated/dashboard/assinatura/checkout'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -404,6 +430,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardCampanhasRouteImport
       parentRoute: typeof AuthenticatedDashboardRoute
     }
+    '/_authenticated/dashboard/assinatura': {
+      id: '/_authenticated/dashboard/assinatura'
+      path: '/assinatura'
+      fullPath: '/dashboard/assinatura'
+      preLoaderRoute: typeof AuthenticatedDashboardAssinaturaRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
     '/_authenticated/dashboard/aniversarios': {
       id: '/_authenticated/dashboard/aniversarios'
       path: '/aniversarios'
@@ -439,6 +472,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminFinanceiroRouteImport
       parentRoute: typeof AuthenticatedAdminRoute
     }
+    '/_authenticated/dashboard/assinatura/checkout': {
+      id: '/_authenticated/dashboard/assinatura/checkout'
+      path: '/checkout'
+      fullPath: '/dashboard/assinatura/checkout'
+      preLoaderRoute: typeof AuthenticatedDashboardAssinaturaCheckoutRouteImport
+      parentRoute: typeof AuthenticatedDashboardAssinaturaRoute
+    }
   }
 }
 
@@ -459,9 +499,25 @@ const AuthenticatedAdminRouteChildren: AuthenticatedAdminRouteChildren = {
 const AuthenticatedAdminRouteWithChildren =
   AuthenticatedAdminRoute._addFileChildren(AuthenticatedAdminRouteChildren)
 
+interface AuthenticatedDashboardAssinaturaRouteChildren {
+  AuthenticatedDashboardAssinaturaCheckoutRoute: typeof AuthenticatedDashboardAssinaturaCheckoutRoute
+}
+
+const AuthenticatedDashboardAssinaturaRouteChildren: AuthenticatedDashboardAssinaturaRouteChildren =
+  {
+    AuthenticatedDashboardAssinaturaCheckoutRoute:
+      AuthenticatedDashboardAssinaturaCheckoutRoute,
+  }
+
+const AuthenticatedDashboardAssinaturaRouteWithChildren =
+  AuthenticatedDashboardAssinaturaRoute._addFileChildren(
+    AuthenticatedDashboardAssinaturaRouteChildren,
+  )
+
 interface AuthenticatedDashboardRouteChildren {
   AuthenticatedDashboardAdminRoute: typeof AuthenticatedDashboardAdminRoute
   AuthenticatedDashboardAniversariosRoute: typeof AuthenticatedDashboardAniversariosRoute
+  AuthenticatedDashboardAssinaturaRoute: typeof AuthenticatedDashboardAssinaturaRouteWithChildren
   AuthenticatedDashboardCampanhasRoute: typeof AuthenticatedDashboardCampanhasRoute
   AuthenticatedDashboardContatosRoute: typeof AuthenticatedDashboardContatosRoute
   AuthenticatedDashboardLembretesRoute: typeof AuthenticatedDashboardLembretesRoute
@@ -474,6 +530,8 @@ const AuthenticatedDashboardRouteChildren: AuthenticatedDashboardRouteChildren =
     AuthenticatedDashboardAdminRoute: AuthenticatedDashboardAdminRoute,
     AuthenticatedDashboardAniversariosRoute:
       AuthenticatedDashboardAniversariosRoute,
+    AuthenticatedDashboardAssinaturaRoute:
+      AuthenticatedDashboardAssinaturaRouteWithChildren,
     AuthenticatedDashboardCampanhasRoute: AuthenticatedDashboardCampanhasRoute,
     AuthenticatedDashboardContatosRoute: AuthenticatedDashboardContatosRoute,
     AuthenticatedDashboardLembretesRoute: AuthenticatedDashboardLembretesRoute,
