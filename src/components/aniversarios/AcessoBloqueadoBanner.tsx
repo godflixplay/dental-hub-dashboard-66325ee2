@@ -22,10 +22,10 @@ export function AcessoBloqueadoBanner({
   if (acesso.loading || acesso.ativo) return null;
 
   return (
-    <Card className="border-amber-300 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/30">
+    <Card className="border-primary/30 bg-primary/5 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Lock className="h-4 w-4" />
           </div>
           <div className="text-sm">

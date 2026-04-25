@@ -90,7 +90,7 @@ export function useAcessoAtivo(): AcessoAtivoState {
 
   // Cancelada mas dentro da janela paga
   if (assinatura.status === "cancelada") {
-    if (dentroDaJanela && temPagamentoConfirmado) {
+    if (dentroDaJanela && temPagamentoConfirmado && assinatura.proxima_cobranca) {
       return {
         loading: false,
         ativo: true,
