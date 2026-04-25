@@ -190,12 +190,20 @@ export const listarPlanos = createServerFn({ method: "POST" })
 // ============================================================
 // criarAssinatura
 // ============================================================
+// Mapa ciclo (interno) → cycle (Asaas) e dias até a próxima cobrança
+const CICLO_TO_ASAAS: Record<string, string> = {
+  mensal: "MONTHLY",
+  trimestral: "QUARTERLY",
+  semestral: "SEMIANNUALLY",
+  anual: "YEARLY",
+};
+
 export const criarAssinatura = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       accessToken: z.string().min(1),
-      planoSlug: z.enum(["mensal", "anual"]),
-      billingType: z.enum(["PIX", "BOLETO", "CREDIT_CARD"]).default("PIX"),
+      planoSlug: z.enum(["mensal", "trimestral", "semestral", "anual"]),
+      billingType: z.enum(["PIX", "CREDIT_CARD"]).default("PIX"),
       cpfCnpj: z.string().min(11).max(20),
       nome: z.string().min(2).max(200),
       telefone: z.string().min(8).max(20).optional(),
@@ -214,10 +222,10 @@ export const criarAssinatura = createServerFn({ method: "POST" })
       .single();
     if (planoErr || !plano) throw new Error("Plano não encontrado");
 
-    // Verificar assinatura existente ativa
+    // Verificar assinatura existente ativa OU cancelada com acesso vigente
     const { data: existente } = await supabase
       .from("assinaturas")
-      .select("id, status, asaas_subscription_id")
+      .select("id, status, asaas_subscription_id, proxima_cobranca")
       .eq("user_id", userId)
       .in("status", ["trial", "ativa", "atrasada"])
       .maybeSingle();
@@ -228,9 +236,6 @@ export const criarAssinatura = createServerFn({ method: "POST" })
     }
 
     // 1) Criar/recuperar customer no Asaas
-    // notificationDisabled=true desativa todos os emails/SMS do Asaas para
-    // este cliente (lembrete de vencimento, recibo de pagamento, etc.).
-    // O usuário acompanha a cobrança apenas pelo app Dental Hub.
     const customer = (await asaasRequest("/customers", {
       method: "POST",
       body: JSON.stringify({
@@ -243,10 +248,12 @@ export const criarAssinatura = createServerFn({ method: "POST" })
       }),
     })) as AsaasCustomer;
 
-    // 2) Criar subscription
+    // 2) Criar subscription recorrente no ciclo correto
     const nextDue = new Date();
     nextDue.setDate(nextDue.getDate() + 1);
     const nextDueDate = nextDue.toISOString().slice(0, 10);
+
+    const cycleAsaas = CICLO_TO_ASAAS[plano.ciclo as string] ?? "MONTHLY";
 
     const subscription = (await asaasRequest("/subscriptions", {
       method: "POST",
@@ -255,8 +262,8 @@ export const criarAssinatura = createServerFn({ method: "POST" })
         billingType: data.billingType,
         value: Number(plano.valor),
         nextDueDate,
-        cycle: plano.ciclo === "anual" ? "YEARLY" : "MONTHLY",
-        description: `Dental Hub — Plano ${plano.nome}`,
+        cycle: cycleAsaas,
+        description: `Dental Hub — ${plano.nome}`,
         externalReference: userId,
       }),
     })) as AsaasSubscription;
