@@ -153,13 +153,68 @@ function AdminFinanceiro() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Integração de Pagamentos</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <PlugZap className="h-5 w-5" />
+            Integração Asaas
+          </CardTitle>
           <CardDescription>
-            Estrutura preparada para integração com Stripe ou outro gateway
+            Teste a comunicação com a API do Asaas e veja qual ambiente está
+            configurado.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex h-24 items-center justify-center text-muted-foreground">
-          Integração será configurada em breve
+        <CardContent className="space-y-4">
+          <Button onClick={handlePing} disabled={pinging}>
+            {pinging ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Testando...
+              </>
+            ) : (
+              "Testar conexão"
+            )}
+          </Button>
+
+          {pingResult && (
+            <div className="rounded-md border p-4 space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                {pingResult.ok ? (
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-destructive" />
+                )}
+                <span className="font-medium">
+                  {pingResult.ok ? "Conectado" : "Falha na conexão"}
+                </span>
+                <Badge variant="outline">{pingResult.env}</Badge>
+              </div>
+              <div className="text-muted-foreground">
+                <span className="font-mono text-xs">{pingResult.baseUrl}</span>
+              </div>
+              {pingResult.ok && pingResult.account && (
+                <div className="grid gap-1 pt-2 border-t">
+                  <div>
+                    <span className="text-muted-foreground">Conta:</span>{" "}
+                    {pingResult.account.name ?? "—"}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Email:</span>{" "}
+                    {pingResult.account.email ?? "—"}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Wallet ID:</span>{" "}
+                    <span className="font-mono text-xs">
+                      {pingResult.account.walletId ?? "—"}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {!pingResult.ok && pingResult.error && (
+                <div className="text-destructive text-xs font-mono">
+                  {pingResult.error}
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
