@@ -25,6 +25,7 @@ import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated.
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated.dashboard.index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated.admin.index'
 import { Route as ApiPublicAsaasWebhookRouteImport } from './routes/api.public.asaas-webhook'
+import { Route as AuthenticatedDashboardTutorialRouteImport } from './routes/_authenticated.dashboard.tutorial'
 import { Route as AuthenticatedDashboardRecuperacaoRouteImport } from './routes/_authenticated.dashboard.recuperacao'
 import { Route as AuthenticatedDashboardLembretesRouteImport } from './routes/_authenticated.dashboard.lembretes'
 import { Route as AuthenticatedDashboardContatosRouteImport } from './routes/_authenticated.dashboard.contatos'
@@ -117,6 +118,12 @@ const ApiPublicAsaasWebhookRoute = ApiPublicAsaasWebhookRouteImport.update({
   path: '/api/public/asaas-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedDashboardTutorialRoute =
+  AuthenticatedDashboardTutorialRouteImport.update({
+    id: '/tutorial',
+    path: '/tutorial',
+    getParentRoute: () => AuthenticatedDashboardRoute,
+  } as any)
 const AuthenticatedDashboardRecuperacaoRoute =
   AuthenticatedDashboardRecuperacaoRouteImport.update({
     id: '/recuperacao',
@@ -206,6 +213,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/dashboard/tutorial': typeof AuthenticatedDashboardTutorialRoute
   '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
@@ -232,6 +240,7 @@ export interface FileRoutesByTo {
   '/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/dashboard/tutorial': typeof AuthenticatedDashboardTutorialRoute
   '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
@@ -262,6 +271,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/contatos': typeof AuthenticatedDashboardContatosRoute
   '/_authenticated/dashboard/lembretes': typeof AuthenticatedDashboardLembretesRoute
   '/_authenticated/dashboard/recuperacao': typeof AuthenticatedDashboardRecuperacaoRoute
+  '/_authenticated/dashboard/tutorial': typeof AuthenticatedDashboardTutorialRoute
   '/api/public/asaas-webhook': typeof ApiPublicAsaasWebhookRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
@@ -292,6 +302,7 @@ export interface FileRouteTypes {
     | '/dashboard/contatos'
     | '/dashboard/lembretes'
     | '/dashboard/recuperacao'
+    | '/dashboard/tutorial'
     | '/api/public/asaas-webhook'
     | '/admin/'
     | '/dashboard/'
@@ -318,6 +329,7 @@ export interface FileRouteTypes {
     | '/dashboard/contatos'
     | '/dashboard/lembretes'
     | '/dashboard/recuperacao'
+    | '/dashboard/tutorial'
     | '/api/public/asaas-webhook'
     | '/admin'
     | '/dashboard'
@@ -347,6 +359,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/contatos'
     | '/_authenticated/dashboard/lembretes'
     | '/_authenticated/dashboard/recuperacao'
+    | '/_authenticated/dashboard/tutorial'
     | '/api/public/asaas-webhook'
     | '/_authenticated/admin/'
     | '/_authenticated/dashboard/'
@@ -482,6 +495,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicAsaasWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/dashboard/tutorial': {
+      id: '/_authenticated/dashboard/tutorial'
+      path: '/tutorial'
+      fullPath: '/dashboard/tutorial'
+      preLoaderRoute: typeof AuthenticatedDashboardTutorialRouteImport
+      parentRoute: typeof AuthenticatedDashboardRoute
+    }
     '/_authenticated/dashboard/recuperacao': {
       id: '/_authenticated/dashboard/recuperacao'
       path: '/recuperacao'
@@ -602,6 +622,7 @@ interface AuthenticatedDashboardRouteChildren {
   AuthenticatedDashboardContatosRoute: typeof AuthenticatedDashboardContatosRoute
   AuthenticatedDashboardLembretesRoute: typeof AuthenticatedDashboardLembretesRoute
   AuthenticatedDashboardRecuperacaoRoute: typeof AuthenticatedDashboardRecuperacaoRoute
+  AuthenticatedDashboardTutorialRoute: typeof AuthenticatedDashboardTutorialRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
 }
 
@@ -617,6 +638,7 @@ const AuthenticatedDashboardRouteChildren: AuthenticatedDashboardRouteChildren =
     AuthenticatedDashboardLembretesRoute: AuthenticatedDashboardLembretesRoute,
     AuthenticatedDashboardRecuperacaoRoute:
       AuthenticatedDashboardRecuperacaoRoute,
+    AuthenticatedDashboardTutorialRoute: AuthenticatedDashboardTutorialRoute,
     AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   }
 

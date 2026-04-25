@@ -120,8 +120,8 @@ function TutorialPage() {
                     {step.detalhe}
                   </p>
                   {step.dica && (
-                    <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <div className="mt-3 flex items-start gap-2 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs text-foreground">
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
                       <span>
                         <strong>Dica:</strong> {step.dica}
                       </span>
