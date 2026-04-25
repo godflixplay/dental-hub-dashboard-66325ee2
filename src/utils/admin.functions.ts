@@ -55,44 +55,59 @@ export const adminMetrics = createServerFn({ method: "POST" })
     inicioMes.setHours(0, 0, 0, 0);
     const inicioMesIso = inicioMes.toISOString();
 
+    async function countAll(table: string) {
+      const { count } = await supabase
+        .from(table)
+        .select("*", { count: "exact", head: true });
+      return count ?? 0;
+    }
+
     const [
       totalUsuarios,
-      whatsappConectado,
+      whatsappConectadoRes,
       contatos,
-      enviadosMes,
-      falhasMes,
-      assinaturasAtivas,
+      enviadosMesRes,
+      falhasMesRes,
+      assinaturasAtivasRes,
     ] = await Promise.all([
-      safeCount(supabase, "profiles"),
-      safeCount(supabase, "whatsapp_instances", (q) =>
-        (q as ReturnType<SupabaseClient["from"]>).eq("status", "connected"),
-      ),
-      safeCount(supabase, "contatos"),
-      safeCount(supabase, "envios_whatsapp", (q) =>
-        (q as ReturnType<SupabaseClient["from"]>)
-          .eq("status", "enviado")
-          .gte("created_at", inicioMesIso),
-      ),
-      safeCount(supabase, "envios_whatsapp", (q) =>
-        (q as ReturnType<SupabaseClient["from"]>)
-          .eq("status", "falha_envio")
-          .gte("created_at", inicioMesIso),
-      ),
-      safeCount(supabase, "assinaturas", (q) =>
-        (q as ReturnType<SupabaseClient["from"]>).eq("status", "ativa"),
-      ),
+      countAll("profiles"),
+      supabase
+        .from("whatsapp_instances")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "connected"),
+      countAll("contatos"),
+      supabase
+        .from("envios_whatsapp")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "enviado")
+        .gte("created_at", inicioMesIso),
+      supabase
+        .from("envios_whatsapp")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "falha_envio")
+        .gte("created_at", inicioMesIso),
+      supabase
+        .from("assinaturas")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "ativa"),
     ]);
 
-    // MRR — soma do valor das assinaturas ativas mensais
+    const whatsappConectado = whatsappConectadoRes.count ?? 0;
+    const enviadosMes = enviadosMesRes.count ?? 0;
+    const falhasMes = falhasMesRes.count ?? 0;
+    const assinaturasAtivas = assinaturasAtivasRes.count ?? 0;
+
+    // MRR — soma do valor das assinaturas ativas (mensal e anual/12)
     let mrr = 0;
     try {
       const { data: rows } = await supabase
         .from("assinaturas")
-        .select("planos!inner(valor, ciclo)")
+        .select("planos(valor, ciclo)")
         .eq("status", "ativa");
-      for (const r of rows ?? []) {
-        const plano = (r as { planos?: { valor: number; ciclo: string } })
-          .planos;
+      for (const r of (rows ?? []) as Array<{
+        planos: { valor: number; ciclo: string } | { valor: number; ciclo: string }[] | null;
+      }>) {
+        const plano = Array.isArray(r.planos) ? r.planos[0] : r.planos;
         if (!plano) continue;
         const valor = Number(plano.valor) || 0;
         mrr += plano.ciclo === "anual" ? valor / 12 : valor;
