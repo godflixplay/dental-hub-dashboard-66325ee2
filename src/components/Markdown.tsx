@@ -1,14 +1,15 @@
 // Componente leve para renderizar Markdown sem dependências externas.
 // Suporta: # h1, ## h2, ### h3, parágrafos, listas - e *, **negrito**,
 // links [txt](url), listas numeradas e linhas em branco como separador.
+import type { ReactNode } from "react";
 
 interface MarkdownProps {
   source: string;
 }
 
-function inline(text: string): (string | JSX.Element)[] {
+function inline(text: string): ReactNode[] {
   // Negrito **x** → <strong>
-  const parts: (string | JSX.Element)[] = [];
+  const parts: ReactNode[] = [];
   const regex = /(\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\))/g;
   let last = 0;
   let m: RegExpExecArray | null;
@@ -44,7 +45,7 @@ function inline(text: string): (string | JSX.Element)[] {
 
 export function Markdown({ source }: MarkdownProps) {
   const lines = source.split("\n");
-  const elements: JSX.Element[] = [];
+  const elements: ReactNode[] = [];
   let listBuf: string[] = [];
   let key = 0;
 
