@@ -28,20 +28,7 @@ async function requireAdmin(accessToken: string): Promise<SupabaseClient> {
   return supabase;
 }
 
-async function safeCount(
-  supabase: SupabaseClient,
-  table: string,
-  apply?: (q: ReturnType<SupabaseClient["from"]>) => unknown,
-): Promise<number> {
-  try {
-    let q = supabase.from(table).select("*", { count: "exact", head: true });
-    if (apply) q = apply(q) as typeof q;
-    const { count } = await q;
-    return count ?? 0;
-  } catch {
-    return 0;
-  }
-}
+
 
 // ============================================================
 // adminMetrics — visão geral do dashboard
