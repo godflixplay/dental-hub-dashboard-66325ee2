@@ -73,7 +73,7 @@ function buildInstanceName(userId: string): string {
   return `dentalhub-${safe}`;
 }
 
-export function WhatsAppTab() {
+export function WhatsAppTab({ acessoAtivo = true }: { acessoAtivo?: boolean } = {}) {
   const { user, session } = useAuth();
   const queryClient = useQueryClient();
   const userId = user?.id;
@@ -615,7 +615,11 @@ export function WhatsAppTab() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={handleConnect} disabled={connecting}>
+            <Button
+              onClick={handleConnect}
+              disabled={connecting || !acessoAtivo}
+              title={!acessoAtivo ? "Assine um plano para liberar" : undefined}
+            >
               <Smartphone className="mr-2 h-4 w-4" />
               {connecting ? "Conectando..." : "Conectar WhatsApp"}
             </Button>

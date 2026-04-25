@@ -6,12 +6,16 @@ import { ContatosTab } from "@/components/aniversarios/ContatosTab";
 import { WhatsAppTab } from "@/components/aniversarios/WhatsAppTab";
 import { MensagemTab } from "@/components/aniversarios/MensagemTab";
 import { EnvioTab } from "@/components/aniversarios/EnvioTab";
+import { AcessoBloqueadoBanner } from "@/components/aniversarios/AcessoBloqueadoBanner";
+import { useAcessoAtivo } from "@/hooks/use-acesso-ativo";
 
 export const Route = createFileRoute("/_authenticated/dashboard/aniversarios")({
   component: AniversariosPage,
 });
 
 function AniversariosPage() {
+  const acesso = useAcessoAtivo();
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -27,6 +31,11 @@ function AniversariosPage() {
           </p>
         </div>
       </div>
+
+      <AcessoBloqueadoBanner
+        acesso={acesso}
+        acao="O envio automático de mensagens"
+      />
 
       <Tabs defaultValue="whatsapp" className="space-y-4">
         <TabsList>
@@ -49,19 +58,19 @@ function AniversariosPage() {
         </TabsList>
 
         <TabsContent value="whatsapp">
-          <WhatsAppTab />
+          <WhatsAppTab acessoAtivo={acesso.ativo} />
         </TabsContent>
 
         <TabsContent value="mensagem">
-          <MensagemTab />
+          <MensagemTab acessoAtivo={acesso.ativo} />
         </TabsContent>
 
         <TabsContent value="contatos">
-          <ContatosTab />
+          <ContatosTab acessoAtivo={acesso.ativo} />
         </TabsContent>
 
         <TabsContent value="envio">
-          <EnvioTab />
+          <EnvioTab acessoAtivo={acesso.ativo} />
         </TabsContent>
       </Tabs>
     </div>

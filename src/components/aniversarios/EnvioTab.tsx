@@ -75,7 +75,7 @@ interface InstanceRow {
 const EVOLUTION_SYNC_THROTTLE_MS = 60_000;
 const lastEvolutionSyncByUser = new Map<string, number>();
 
-export function EnvioTab() {
+export function EnvioTab({ acessoAtivo = true }: { acessoAtivo?: boolean } = {}) {
   const { user, session } = useAuth();
   const queryClient = useQueryClient();
   const userId = user?.id;
@@ -723,7 +723,11 @@ export function EnvioTab() {
             </div>
           )}
 
-          <Button onClick={handleSend} disabled={sending || !canSend}>
+          <Button
+            onClick={handleSend}
+            disabled={sending || !canSend || !acessoAtivo}
+            title={!acessoAtivo ? "Assine um plano para liberar" : undefined}
+          >
             <Send className="mr-2 h-4 w-4" />
             {sending ? "Enviando..." : "Enviar Teste"}
           </Button>
