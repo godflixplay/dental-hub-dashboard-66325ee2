@@ -1,4 +1,4 @@
-import { Cake, Megaphone, Bell, UserCheck, LayoutDashboard, LogOut, Shield, Users, CreditCard, LifeBuoy, Mail, MessageCircle } from "lucide-react";
+import { Cake, Megaphone, Bell, UserCheck, LayoutDashboard, LogOut, Shield, Users, CreditCard, LifeBuoy, Mail, MessageCircle, BookOpen } from "lucide-react";
 import { Link, useLocation } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -27,6 +27,7 @@ const SUPPORT_WHATSAPP_LINK = "https://wa.me/5521981089100";
 
 const clientMenuItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+  { title: "Tutorial", url: "/dashboard/tutorial", icon: BookOpen },
   { title: "Meus Contatos", url: "/dashboard/contatos", icon: Users },
   { title: "Aniversários", url: "/dashboard/aniversarios", icon: Cake },
   { title: "Campanhas", url: "/dashboard/campanhas", icon: Megaphone },
