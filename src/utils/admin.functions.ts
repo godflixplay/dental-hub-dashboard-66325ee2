@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/integrations/supabase/client";
+import { getSupabaseAdmin } from "@/integrations/supabase/admin.server";
 
 // ============================================================
 // Server functions para o painel administrativo.
@@ -120,46 +121,120 @@ export const adminMetrics = createServerFn({ method: "POST" })
   });
 
 // ============================================================
-// adminLogs — últimos envios da plataforma
+// adminLogs — envios agrupados por usuário, com filtro de data
 // ============================================================
 export const adminLogs = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       accessToken: z.string().min(1),
-      limit: z.number().min(1).max(200).default(50),
+      limit: z.number().min(1).max(1000).default(500),
       filtroStatus: z.enum(["todos", "enviado", "falha_envio"]).default("todos"),
+      dataInicio: z.string().optional(), // ISO
+      dataFim: z.string().optional(), // ISO
     }),
   )
   .handler(async ({ data }) => {
     const supabase = await requireAdmin(data.accessToken);
     let q = supabase
       .from("envios_whatsapp")
-      .select("id, telefone, status, created_at, user_id, instancia_id")
+      .select("id, telefone, status, created_at, user_id, instancia_id, erro, nome")
       .order("created_at", { ascending: false })
       .limit(data.limit);
     if (data.filtroStatus !== "todos") q = q.eq("status", data.filtroStatus);
+    if (data.dataInicio) q = q.gte("created_at", data.dataInicio);
+    if (data.dataFim) q = q.lte("created_at", data.dataFim);
     const { data: envios, error } = await q;
     if (error) throw new Error(error.message);
 
-    // Buscar emails dos profiles em batch
+    // Buscar emails/nome dos profiles em batch
     const userIds = Array.from(
       new Set((envios ?? []).map((e) => e.user_id).filter(Boolean)),
     );
-    const emailMap: Record<string, string> = {};
+    const profMap: Record<
+      string,
+      { email: string; nome_responsavel: string | null }
+    > = {};
     if (userIds.length > 0) {
       const { data: profs } = await supabase
         .from("profiles")
-        .select("id, email")
+        .select("id, email, nome_responsavel")
         .in("id", userIds);
-      for (const p of profs ?? []) emailMap[p.id] = p.email;
+      for (const p of profs ?? []) {
+        profMap[p.id] = {
+          email: p.email,
+          nome_responsavel: p.nome_responsavel ?? null,
+        };
+      }
     }
 
-    return {
-      envios: (envios ?? []).map((e) => ({
-        ...e,
-        email: emailMap[e.user_id] ?? "—",
-      })),
+    type EnvioOut = {
+      id: string;
+      telefone: string;
+      status: string;
+      created_at: string;
+      user_id: string;
+      instancia_id: string | null;
+      erro: string | null;
+      nome: string | null;
+      email: string;
+      nome_responsavel: string | null;
     };
+
+    const enviosOut: EnvioOut[] = (envios ?? []).map((e) => ({
+      id: e.id,
+      telefone: e.telefone,
+      status: e.status,
+      created_at: e.created_at,
+      user_id: e.user_id,
+      instancia_id: e.instancia_id ?? null,
+      erro: e.erro ?? null,
+      nome: e.nome ?? null,
+      email: profMap[e.user_id]?.email ?? "—",
+      nome_responsavel: profMap[e.user_id]?.nome_responsavel ?? null,
+    }));
+
+    // Agrupar por usuário
+    type Group = {
+      user_id: string;
+      email: string;
+      nome_responsavel: string | null;
+      total: number;
+      enviados: number;
+      falhas: number;
+      ultimoEnvio: string | null;
+      envios: EnvioOut[];
+    };
+    const grupos = new Map<string, Group>();
+    for (const e of enviosOut) {
+      let g = grupos.get(e.user_id);
+      if (!g) {
+        g = {
+          user_id: e.user_id,
+          email: e.email,
+          nome_responsavel: e.nome_responsavel,
+          total: 0,
+          enviados: 0,
+          falhas: 0,
+          ultimoEnvio: null,
+          envios: [],
+        };
+        grupos.set(e.user_id, g);
+      }
+      g.total += 1;
+      if (e.status === "enviado") g.enviados += 1;
+      else if (e.status === "falha_envio") g.falhas += 1;
+      if (!g.ultimoEnvio || e.created_at > g.ultimoEnvio) {
+        g.ultimoEnvio = e.created_at;
+      }
+      g.envios.push(e);
+    }
+    const grupoList = Array.from(grupos.values()).sort((a, b) => {
+      if (!a.ultimoEnvio) return 1;
+      if (!b.ultimoEnvio) return -1;
+      return b.ultimoEnvio.localeCompare(a.ultimoEnvio);
+    });
+
+    return { envios: enviosOut, grupos: grupoList };
   });
 
 // ============================================================
@@ -214,4 +289,87 @@ export const adminUsuarios = createServerFn({ method: "POST" })
         plano: planoStatus[p.id] ?? "Gratuito",
       })),
     };
+  });
+
+// ============================================================
+// adminEvolutionInstances — lista status persistido + check live opcional
+// ============================================================
+export const adminEvolutionInstances = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ accessToken: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const supabase = await requireAdmin(data.accessToken);
+    const { data: instancias, error } = await supabase
+      .from("whatsapp_instances")
+      .select("id, user_id, instance_name, status, updated_at, project_tag")
+      .order("updated_at", { ascending: false });
+    if (error) throw new Error(error.message);
+
+    const ids = Array.from(
+      new Set((instancias ?? []).map((i) => i.user_id).filter(Boolean)),
+    );
+    const profMap: Record<
+      string,
+      { email: string; nome_responsavel: string | null }
+    > = {};
+    if (ids.length > 0) {
+      const { data: profs } = await supabase
+        .from("profiles")
+        .select("id, email, nome_responsavel")
+        .in("id", ids);
+      for (const p of profs ?? []) {
+        profMap[p.id] = {
+          email: p.email,
+          nome_responsavel: p.nome_responsavel ?? null,
+        };
+      }
+    }
+
+    return {
+      instancias: (instancias ?? []).map((i) => ({
+        ...i,
+        email: profMap[i.user_id]?.email ?? "—",
+        nome_responsavel: profMap[i.user_id]?.nome_responsavel ?? null,
+      })),
+    };
+  });
+
+// ============================================================
+// adminRefreshInstanceStatus — checa Evolution API e persiste
+// ============================================================
+export const adminRefreshInstanceStatus = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      accessToken: z.string().min(1),
+      instanceName: z.string().min(1),
+    }),
+  )
+  .handler(async ({ data }) => {
+    await requireAdmin(data.accessToken);
+    const baseUrl = process.env.EVOLUTION_API_URL;
+    const apiKey = process.env.EVOLUTION_API_KEY;
+    if (!baseUrl || !apiKey) {
+      throw new Error("Evolution API não configurada");
+    }
+
+    const url = `${baseUrl.replace(/\/+$/, "")}/instance/connectionState/${encodeURIComponent(data.instanceName)}`;
+    const res = await fetch(url, { headers: { apikey: apiKey } });
+
+    let novoStatus = "disconnected";
+    if (res.ok) {
+      const json = (await res.json().catch(() => null)) as
+        | { instance?: { state?: string }; state?: string }
+        | null;
+      const state = json?.instance?.state ?? json?.state;
+      if (state === "open") novoStatus = "connected";
+      else if (state === "connecting") novoStatus = "connecting";
+      else novoStatus = "disconnected";
+    }
+
+    const admin = getSupabaseAdmin();
+    await admin
+      .from("whatsapp_instances")
+      .update({ status: novoStatus, updated_at: new Date().toISOString() })
+      .eq("instance_name", data.instanceName);
+
+    return { instance_name: data.instanceName, status: novoStatus };
   });

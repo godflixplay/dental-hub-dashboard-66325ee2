@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, Navigate } from "@tanstack/react-router";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -27,11 +28,14 @@ function AdminLayout() {
       <div className="flex min-h-screen w-full">
         <AdminSidebar />
         <div className="flex flex-1 flex-col">
-          <header className="flex h-14 items-center border-b bg-card px-4">
-            <SidebarTrigger />
-            <span className="ml-3 text-sm font-medium text-muted-foreground">
-              Painel Administrativo
-            </span>
+          <header className="flex h-14 items-center justify-between border-b bg-card px-4">
+            <div className="flex items-center">
+              <SidebarTrigger />
+              <span className="ml-3 text-sm font-medium text-muted-foreground">
+                Painel Administrativo
+              </span>
+            </div>
+            <NotificationBell />
           </header>
           <main className="flex-1 p-6">
             <Outlet />
