@@ -33,7 +33,7 @@ interface ConfigMensagem {
   imagem_url: string | null;
 }
 
-export function MensagemTab() {
+export function MensagemTab({ acessoAtivo = true }: { acessoAtivo?: boolean } = {}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const userId = user?.id;
@@ -395,7 +395,12 @@ export function MensagemTab() {
             </p>
           </div>
 
-          <Button onClick={handleSave} disabled={saving} className="w-full">
+          <Button
+            onClick={handleSave}
+            disabled={saving || !acessoAtivo}
+            title={!acessoAtivo ? "Assine um plano para liberar" : undefined}
+            className="w-full"
+          >
             <Save className="mr-2 h-4 w-4" />
             {saving ? "Salvando..." : "Salvar Configuração"}
           </Button>

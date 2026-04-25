@@ -44,7 +44,7 @@ interface Contato {
   created_at: string;
 }
 
-export function ContatosTab() {
+export function ContatosTab({ acessoAtivo = true }: { acessoAtivo?: boolean } = {}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const userId = user?.id;
@@ -337,6 +337,8 @@ export function ContatosTab() {
           <Button
             size="sm"
             variant="outline"
+            disabled={!acessoAtivo}
+            title={!acessoAtivo ? "Assine um plano para liberar" : undefined}
             onClick={() => {
               setForm({ nome: "", telefone: "", data_nascimento: "" });
               setAddOpen(true);
@@ -348,7 +350,8 @@ export function ContatosTab() {
           <Button
             size="sm"
             variant="outline"
-            disabled={uploading}
+            disabled={uploading || !acessoAtivo}
+            title={!acessoAtivo ? "Assine um plano para liberar" : undefined}
             onClick={() => fileRef.current?.click()}
           >
             <Upload className="mr-1 h-4 w-4" />
