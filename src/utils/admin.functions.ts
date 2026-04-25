@@ -298,11 +298,46 @@ export const adminEvolutionInstances = createServerFn({ method: "POST" })
   .inputValidator(z.object({ accessToken: z.string().min(1) }))
   .handler(async ({ data }) => {
     const supabase = await requireAdmin(data.accessToken);
-    const { data: instancias, error } = await supabase
-      .from("whatsapp_instances")
-      .select("id, user_id, instance_name, status, updated_at, project_tag")
-      .order("updated_at", { ascending: false });
-    if (error) throw new Error(error.message);
+    // Tenta com updated_at/project_tag; se a migration ainda não foi aplicada,
+    // faz fallback para created_at e segue funcionando.
+    let instancias:
+      | Array<{
+          id: string;
+          user_id: string;
+          instance_name: string;
+          status: string;
+          updated_at: string | null;
+          project_tag: string | null;
+        }>
+      | null = null;
+    let queryError: { message: string; code?: string } | null = null;
+    {
+      const res = await supabase
+        .from("whatsapp_instances")
+        .select("id, user_id, instance_name, status, updated_at, project_tag")
+        .order("updated_at", { ascending: false });
+      instancias = res.data as typeof instancias;
+      queryError = res.error;
+    }
+    if (queryError) {
+      // Fallback sem colunas novas
+      const res = await supabase
+        .from("whatsapp_instances")
+        .select("id, user_id, instance_name, status, created_at")
+        .order("created_at", { ascending: false });
+      if (res.error) {
+        // Tabela/colunas indisponíveis — devolve vazio em vez de derrubar a tela
+        return { instancias: [], migrationPending: true as const };
+      }
+      instancias = (res.data ?? []).map((r) => ({
+        id: r.id,
+        user_id: r.user_id,
+        instance_name: r.instance_name,
+        status: r.status,
+        updated_at: r.created_at ?? null,
+        project_tag: null,
+      }));
+    }
 
     const ids = Array.from(
       new Set((instancias ?? []).map((i) => i.user_id).filter(Boolean)),
@@ -330,6 +365,7 @@ export const adminEvolutionInstances = createServerFn({ method: "POST" })
         email: profMap[i.user_id]?.email ?? "—",
         nome_responsavel: profMap[i.user_id]?.nome_responsavel ?? null,
       })),
+      migrationPending: false as const,
     };
   });
 
