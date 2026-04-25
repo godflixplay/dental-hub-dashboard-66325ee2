@@ -4,6 +4,10 @@ import {
   Users,
   TrendingUp,
   TrendingDown,
+  Loader2,
+  PlugZap,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import {
   Card,
@@ -12,10 +16,28 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
+import { toast } from "sonner";
+import { useAuth } from "@/hooks/use-auth";
+import { pingAsaas } from "@/utils/asaas.functions";
 
 export const Route = createFileRoute("/_authenticated/admin/financeiro")({
   component: AdminFinanceiro,
 });
+
+interface PingResult {
+  ok: boolean;
+  env: string;
+  baseUrl: string;
+  account?: {
+    email: string | null;
+    name: string | null;
+    walletId: string | null;
+  };
+  error?: string;
+}
 
 function AdminFinanceiro() {
   return (
