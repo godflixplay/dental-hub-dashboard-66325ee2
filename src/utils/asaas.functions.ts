@@ -287,7 +287,12 @@ export const criarAssinatura = createServerFn({ method: "POST" })
   });
 
 // ============================================================
-// cancelarAssinatura
+// cancelarAssinatura — cancelamento "soft":
+// - desliga a renovação no Asaas (DELETE /subscriptions/:id)
+// - marca status = 'cancelada' no Supabase
+// - mas mantém proxima_cobranca como "data limite de acesso"
+// O gate de acesso (utilitário hasAcessoAtivo) considera que
+// 'cancelada' com proxima_cobranca >= hoje ainda tem acesso.
 // ============================================================
 export const cancelarAssinatura = createServerFn({ method: "POST" })
   .inputValidator(z.object({ accessToken: z.string().min(1) }))
@@ -296,7 +301,7 @@ export const cancelarAssinatura = createServerFn({ method: "POST" })
 
     const { data: assinatura } = await supabase
       .from("assinaturas")
-      .select("id, asaas_subscription_id, status")
+      .select("id, asaas_subscription_id, status, proxima_cobranca")
       .eq("user_id", userId)
       .in("status", ["trial", "ativa", "atrasada"])
       .maybeSingle();
@@ -305,9 +310,16 @@ export const cancelarAssinatura = createServerFn({ method: "POST" })
       throw new Error("Nenhuma assinatura ativa para cancelar");
     }
 
-    await asaasRequest(`/subscriptions/${assinatura.asaas_subscription_id}`, {
-      method: "DELETE",
-    });
+    // Desliga renovação no Asaas (não emite mais novas cobranças)
+    try {
+      await asaasRequest(
+        `/subscriptions/${assinatura.asaas_subscription_id}`,
+        { method: "DELETE" },
+      );
+    } catch (e) {
+      // Se a subscription já foi deletada no Asaas, segue em frente
+      console.warn("[asaas] DELETE subscription falhou, prosseguindo:", e);
+    }
 
     const { error } = await supabase
       .from("assinaturas")
@@ -315,5 +327,44 @@ export const cancelarAssinatura = createServerFn({ method: "POST" })
       .eq("id", assinatura.id);
     if (error) throw new Error(error.message);
 
-    return { ok: true };
+    return {
+      ok: true,
+      acessoAte: assinatura.proxima_cobranca,
+    };
+  });
+
+// ============================================================
+// hasAcessoAtivo — server function leve usada pelo gate do app
+// ============================================================
+export const hasAcessoAtivo = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ accessToken: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { supabase, userId } = await getAuthedSupabase(data.accessToken);
+
+    const { data: assinatura } = await supabase
+      .from("assinaturas")
+      .select("status, proxima_cobranca")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!assinatura) return { ativo: false, motivo: "sem_assinatura" as const };
+
+    if (["trial", "ativa", "atrasada"].includes(assinatura.status)) {
+      return { ativo: true, status: assinatura.status };
+    }
+
+    if (assinatura.status === "cancelada" && assinatura.proxima_cobranca) {
+      const hoje = new Date().toISOString().slice(0, 10);
+      if (assinatura.proxima_cobranca >= hoje) {
+        return {
+          ativo: true,
+          status: "cancelada",
+          acessoAte: assinatura.proxima_cobranca,
+        };
+      }
+    }
+
+    return { ativo: false, motivo: "expirada" as const };
   });
