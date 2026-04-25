@@ -16,7 +16,38 @@ SET telefone_contato = COALESCE(
 FROM auth.users u
 WHERE u.id = p.id;
 
--- 2) Tabela de notificações in-app (sino do header)
+-- 1.1) Trigger: ao criar/atualizar usuário, espelha telefone_contato no profile
+-- (também garante nome_responsavel/nome_clinica caso ainda não exista o trigger)
+CREATE OR REPLACE FUNCTION public.handle_user_meta_sync()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, nome_responsavel, nome_clinica, telefone_contato)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    NULLIF(NEW.raw_user_meta_data ->> 'nome_responsavel', ''),
+    NULLIF(NEW.raw_user_meta_data ->> 'nome_clinica', ''),
+    NULLIF(NEW.raw_user_meta_data ->> 'telefone_contato', '')
+  )
+  ON CONFLICT (id) DO UPDATE
+  SET
+    email = EXCLUDED.email,
+    nome_responsavel = COALESCE(public.profiles.nome_responsavel, EXCLUDED.nome_responsavel),
+    nome_clinica = COALESCE(public.profiles.nome_clinica, EXCLUDED.nome_clinica),
+    telefone_contato = COALESCE(public.profiles.telefone_contato, EXCLUDED.telefone_contato);
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_meta_sync ON auth.users;
+CREATE TRIGGER on_auth_user_meta_sync
+  AFTER INSERT OR UPDATE OF raw_user_meta_data, email ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_user_meta_sync();
+
 CREATE TABLE IF NOT EXISTS public.notificacoes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
