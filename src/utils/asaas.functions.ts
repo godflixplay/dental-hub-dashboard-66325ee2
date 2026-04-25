@@ -17,9 +17,19 @@ const ASAAS_PROD_BASE = "https://api.asaas.com/v3";
 function getAsaasConfig() {
   const apiKey = process.env.ASAAS_API_KEY;
   if (!apiKey) throw new Error("ASAAS_API_KEY não configurada");
-  const env = (process.env.ASAAS_ENV ?? "sandbox").toLowerCase();
+
+  // Detecção do ambiente:
+  // 1) Chaves de produção do Asaas começam com "$aact_prod_".
+  //    Chaves de sandbox começam com "$aact_hmlg_" ou "$aact_YT...".
+  //    Se a chave indicar produção, usamos produção — independente do
+  //    ASAAS_ENV — para evitar erro 401 "invalid_environment".
+  // 2) Caso contrário, respeitamos ASAAS_ENV (default: sandbox).
+  const trimmedKey = apiKey.trim();
+  const keyLooksProd = trimmedKey.startsWith("$aact_prod_");
+  const envVar = (process.env.ASAAS_ENV ?? "").trim().toLowerCase();
+  const env = keyLooksProd || envVar === "production" ? "production" : "sandbox";
   const baseUrl = env === "production" ? ASAAS_PROD_BASE : ASAAS_SANDBOX_BASE;
-  return { apiKey, baseUrl, env };
+  return { apiKey: trimmedKey, baseUrl, env };
 }
 
 async function asaasRequest(
